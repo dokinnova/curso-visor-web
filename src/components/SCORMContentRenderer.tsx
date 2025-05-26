@@ -43,18 +43,16 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
       }
       virtualServerRef.current = new VirtualFileServer();
 
-      console.log('=== LOADING SCORM CONTENT ===');
+      console.log('=== LOADING SCORM 1.2 CONTENT ===');
       console.log('Resource to load:', resource);
-      console.log('Resource href:', resource.href);
-      console.log('Resource files:', resource.files);
       
-      // Cargar TODOS los archivos del paquete SCORM al servidor virtual
+      // Procesar todos los archivos del paquete SCORM
       let htmlFilesProcessed = 0;
       for (const [path, file] of scormPackage.files.entries()) {
         console.log(`Processing file: ${path} (${file.size} bytes, ${file.type})`);
         
         if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
-          console.log(`Injecting SCORM API into HTML file: ${path}`);
+          console.log(`Injecting SCORM 1.2 API into HTML file: ${path}`);
           try {
             const modifiedFile = await createModifiedBlob(file);
             virtualServerRef.current.addFile(path, modifiedFile);
@@ -68,59 +66,67 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
         }
       }
 
-      console.log(`Processed ${htmlFilesProcessed} HTML files with SCORM API injection`);
+      console.log(`Processed ${htmlFilesProcessed} HTML files with SCORM 1.2 API injection`);
       
-      // Debug: mostrar todos los archivos cargados
-      virtualServerRef.current.debugListFiles();
-
-      // Intentar encontrar el archivo principal del recurso
+      // Estrategia mejorada para encontrar el contenido principal
       let resolvedUrl: string | null = null;
       
+      // 1. Intentar con el href del recurso
       if (resource.href) {
-        console.log(`Trying to resolve main resource: ${resource.href}`);
+        console.log(`Trying main resource href: ${resource.href}`);
         resolvedUrl = virtualServerRef.current.resolveUrl(resource.href);
+        if (resolvedUrl) {
+          console.log(`SUCCESS: Found content using main href: ${resource.href}`);
+        }
       }
 
-      // Si no se puede resolver el href principal, probar con los archivos del recurso
+      // 2. Intentar con los archivos del recurso
       if (!resolvedUrl && resource.files.length > 0) {
         console.log('Main href not found, trying resource files...');
-        for (const resourceFile of resource.files) {
+        
+        // Priorizar archivos HTML
+        const htmlFiles = resource.files.filter(f => 
+          f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')
+        );
+        
+        const filesToTry = htmlFiles.length > 0 ? htmlFiles : resource.files;
+        
+        for (const resourceFile of filesToTry) {
           console.log(`Trying resource file: ${resourceFile}`);
           resolvedUrl = virtualServerRef.current.resolveUrl(resourceFile);
           if (resolvedUrl) {
-            console.log(`Found content using resource file: ${resourceFile}`);
+            console.log(`SUCCESS: Found content using resource file: ${resourceFile}`);
             break;
           }
         }
       }
 
-      // Si aún no encontramos nada, buscar archivos HTML comunes
+      // 3. Buscar archivos de entrada comunes para SCORM 1.2
       if (!resolvedUrl) {
-        console.log('No specific resource file found, searching for common entry points...');
-        const commonEntryPoints = [
-          'index.html',
-          'main.html',
-          'start.html',
-          'launch.html',
-          'default.html',
-          'content.html',
-          'lesson.html'
+        console.log('No specific resource file found, searching for SCORM 1.2 entry points...');
+        const scorm12EntryPoints = [
+          'index.html', 'index.htm',
+          'default.html', 'default.htm',
+          'main.html', 'main.htm',
+          'start.html', 'start.htm',
+          'launch.html', 'launch.htm',
+          'content.html', 'content.htm',
+          'lesson.html', 'lesson.htm',
+          'course.html', 'course.htm'
         ];
 
-        for (const entryPoint of commonEntryPoints) {
+        for (const entryPoint of scorm12EntryPoints) {
           resolvedUrl = virtualServerRef.current.resolveUrl(entryPoint);
           if (resolvedUrl) {
-            console.log(`Found entry point: ${entryPoint}`);
+            console.log(`SUCCESS: Found SCORM 1.2 entry point: ${entryPoint}`);
             break;
           }
         }
       }
 
-      if (resolvedUrl) {
-        console.log(`SUCCESS: Loading content from: ${resolvedUrl}`);
-        setContentUrl(resolvedUrl);
-      } else {
-        // Último intento: usar cualquier archivo HTML disponible
+      // 4. Como último recurso, usar cualquier archivo HTML disponible
+      if (!resolvedUrl) {
+        console.log('Using fallback: searching for any HTML file...');
         const allFiles = virtualServerRef.current.getAllFiles();
         const htmlFiles = allFiles.filter(f => 
           f.mimeType === 'text/html' || 
@@ -128,50 +134,56 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
           f.path.toLowerCase().endsWith('.htm')
         );
 
-        console.log(`Found ${htmlFiles.length} HTML files:`, htmlFiles);
+        console.log(`Found ${htmlFiles.length} HTML files:`, htmlFiles.map(f => f.path));
 
         if (htmlFiles.length > 0) {
-          console.log(`Using first available HTML file: ${htmlFiles[0].path}`);
-          setContentUrl(htmlFiles[0].url);
+          // Priorizar archivos con nombres comunes
+          const prioritizedFile = htmlFiles.find(f => 
+            ['index', 'main', 'start', 'launch', 'content'].some(name => 
+              f.path.toLowerCase().includes(name)
+            )
+          ) || htmlFiles[0];
+          
+          console.log(`Using HTML file: ${prioritizedFile.path}`);
+          setContentUrl(prioritizedFile.url);
         } else {
-          throw new Error(`No se encontraron archivos HTML ejecutables en el paquete SCORM. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
+          throw new Error(`No se encontraron archivos HTML ejecutables en el paquete SCORM 1.2. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
         }
+      } else {
+        setContentUrl(resolvedUrl);
       }
 
     } catch (err) {
-      console.error('Error loading SCORM content:', err);
-      setError(err instanceof Error ? err.message : 'Error desconocido al cargar el contenido');
+      console.error('Error loading SCORM 1.2 content:', err);
+      setError(err instanceof Error ? err.message : 'Error desconocido al cargar el contenido SCORM 1.2');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleIframeLoad = () => {
-    console.log('Iframe loaded successfully');
+    console.log('SCORM 1.2 iframe loaded successfully');
     setIsLoading(false);
     
-    // Intentar establecer comunicación con el iframe
+    // Mejorar la comunicación con el iframe para SCORM 1.2
     if (iframeRef.current) {
       try {
         const iframeWindow = iframeRef.current.contentWindow;
         if (iframeWindow) {
-          // Verificar si la API SCORM está disponible
           setTimeout(() => {
             try {
               if ((iframeWindow as any).API) {
-                console.log('SCORM API detected in iframe');
+                console.log('SCORM 1.2 API detected in iframe');
+                // Inicializar la sesión SCORM automáticamente
+                const initResult = (iframeWindow as any).API.LMSInitialize('');
+                console.log('SCORM 1.2 auto-initialization result:', initResult);
               } else {
-                console.warn('SCORM API not found in iframe');
+                console.warn('SCORM 1.2 API not found in iframe');
               }
             } catch (e) {
               console.log('Cannot access iframe content due to CORS restrictions');
             }
           }, 1000);
-          
-          iframeWindow.addEventListener('error', (event) => {
-            console.error('Error inside iframe:', event.error);
-            setError(`Error en el contenido: ${event.error?.message || 'Error desconocido'}`);
-          });
         }
       } catch (e) {
         console.log('Cannot access iframe content (CORS)');
@@ -224,7 +236,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
       src={contentUrl}
       className="w-full h-full border-0 rounded-b-lg"
       title={title}
-      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads allow-top-navigation-by-user-activation"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads allow-top-navigation-by-user-activation allow-popups-to-escape-sandbox"
       onLoad={handleIframeLoad}
       onError={handleIframeError}
     />
