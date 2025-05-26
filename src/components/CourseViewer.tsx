@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, BookOpen, ChevronRight, Home, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { SCORMPackage, Item, Resource } from '@/types/scorm';
 import { setupSCORMAPI } from '@/utils/scormAPI';
+import SCORMContentRenderer from './SCORMContentRenderer';
 
 interface CourseViewerProps {
   course: SCORMPackage;
@@ -15,17 +17,23 @@ interface CourseViewerProps {
 const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
   const [currentItem, setCurrentItem] = useState<Item | null>(null);
   const [currentResource, setCurrentResource] = useState<Resource | null>(null);
-  const [contentUrl, setContentUrl] = useState<string>('');
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     // Configurar la API SCORM cuando se monta el componente
     setupSCORMAPI();
     
-    // Debug: mostrar todos los archivos disponibles
+    // Debug: mostrar información del curso
+    console.log('SCORM Course loaded:');
+    console.log('- Title:', course.manifest.title);
+    console.log('- Organizations:', course.manifest.organizations.length);
+    console.log('- Resources:', course.manifest.resources.length);
+    console.log('- Files:', course.files.size);
+    
+    // Mostrar todos los archivos disponibles
     console.log('Available files in SCORM package:');
     course.files.forEach((file, path) => {
-      console.log('- ', path);
+      console.log(`  ${path} (${file.size} bytes, ${file.type})`);
     });
     
     // Seleccionar el primer item automáticamente
@@ -46,69 +54,12 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
       if (resource) {
         console.log('Found resource:', resource);
         setCurrentResource(resource);
-        loadContent(resource);
       } else {
         console.error('Resource not found for identifier:', item.identifierref);
+        setCurrentResource(null);
       }
-    }
-  };
-
-  const loadContent = async (resource: Resource) => {
-    if (!resource.href) {
-      console.warn('Resource has no href:', resource);
-      return;
-    }
-
-    console.log('Attempting to load resource with href:', resource.href);
-
-    // Separar el archivo base de los query parameters
-    const [baseHref] = resource.href.split('?');
-    console.log('Base href:', baseHref);
-
-    // Buscar el archivo por nombre base primero
-    let file = course.files.get(resource.href);
-    
-    if (!file) {
-      // Si no se encuentra con query parameters, buscar sin ellos
-      file = course.files.get(baseHref);
-      console.log('Looking for file without query params:', baseHref);
-    }
-
-    if (!file) {
-      // Buscar archivos que contengan el nombre base
-      const matchingFiles = Array.from(course.files.keys()).filter(path => 
-        path.includes(baseHref) || baseHref.includes(path.split('/').pop() || '')
-      );
-      console.log('Matching files found:', matchingFiles);
-      
-      if (matchingFiles.length > 0) {
-        file = course.files.get(matchingFiles[0]);
-        console.log('Using matching file:', matchingFiles[0]);
-      }
-    }
-
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setContentUrl(url);
-      console.log('Loading content from:', url);
     } else {
-      console.error('File not found. Available files:');
-      course.files.forEach((_, path) => console.log('  ', path));
-      console.error('Searched for:', resource.href, 'and', baseHref);
-      
-      // Intentar cargar el primer archivo HTML disponible como fallback
-      const htmlFiles = Array.from(course.files.keys()).filter(path => 
-        path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')
-      );
-      
-      if (htmlFiles.length > 0) {
-        console.log('Using fallback HTML file:', htmlFiles[0]);
-        const fallbackFile = course.files.get(htmlFiles[0]);
-        if (fallbackFile) {
-          const url = URL.createObjectURL(fallbackFile);
-          setContentUrl(url);
-        }
-      }
+      setCurrentResource(null);
     }
   };
 
@@ -139,10 +90,8 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
     );
   };
 
-  const resetContent = () => {
-    if (currentResource) {
-      loadContent(currentResource);
-    }
+  const refreshContent = () => {
+    setRefreshKey(prev => prev + 1);
   };
 
   return (
@@ -167,9 +116,9 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
               </div>
             </div>
             
-            {currentItem && (
+            {currentItem && currentResource && (
               <div className="flex items-center space-x-2">
-                <Button variant="outline" size="sm" onClick={resetContent}>
+                <Button variant="outline" size="sm" onClick={refreshContent}>
                   <RotateCcw className="h-4 w-4 mr-2" />
                   Recargar
                 </Button>
@@ -204,7 +153,7 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
 
         {/* Content Area */}
         <div className="flex-1 p-6">
-          {currentItem && contentUrl ? (
+          {currentItem && currentResource ? (
             <Card className="h-full">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center space-x-2">
@@ -212,12 +161,11 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0 h-[calc(100%-80px)]">
-                <iframe
-                  ref={iframeRef}
-                  src={contentUrl}
-                  className="w-full h-full border-0 rounded-b-lg"
+                <SCORMContentRenderer
+                  key={`${currentResource.identifier}-${refreshKey}`}
+                  resource={currentResource}
+                  scormPackage={course}
                   title={currentItem.title}
-                  sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups"
                 />
               </CardContent>
             </Card>
