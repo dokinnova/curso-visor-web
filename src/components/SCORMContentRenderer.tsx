@@ -20,6 +20,11 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
   const { contentUrl, error, isLoading, retry } = useSCORMContentLoader(resource, scormPackage);
   const { iframeRef, handleIframeLoad, handleIframeError } = useSCORMIframe();
 
+  console.log('=== SCORM CONTENT RENDERER ===');
+  console.log('Content URL:', contentUrl);
+  console.log('Is Loading:', isLoading);
+  console.log('Error:', error);
+
   if (error) {
     return <SCORMErrorDisplay error={error} onRetry={retry} />;
   }
@@ -28,14 +33,12 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
     return <SCORMLoadingDisplay />;
   }
 
-  console.log('Rendering SCORM content with URL:', contentUrl);
-
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full bg-white">
       <iframe
         ref={iframeRef}
         src={contentUrl}
-        className="w-full h-full border-0 rounded-b-lg"
+        className="w-full h-full border-0"
         title={title}
         sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads allow-top-navigation-by-user-activation allow-popups-to-escape-sandbox"
         onLoad={handleIframeLoad}
@@ -44,7 +47,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
           width: '100%',
           height: '100%',
           border: 'none',
-          overflow: 'hidden'
+          display: 'block'
         }}
       />
     </div>

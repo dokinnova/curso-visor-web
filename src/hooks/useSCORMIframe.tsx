@@ -5,120 +5,48 @@ export const useSCORMIframe = () => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const handleIframeLoad = () => {
-    console.log('SCORM iframe loaded successfully');
+    console.log('=== IFRAME LOADED ===');
     
     if (iframeRef.current) {
+      console.log('Iframe src:', iframeRef.current.src);
+      
       try {
         const iframeWindow = iframeRef.current.contentWindow;
         if (iframeWindow) {
-          // Wait a bit for the content to fully load
+          // Wait for content to fully load
           setTimeout(() => {
             try {
+              console.log('Checking for SCORM API in iframe...');
+              
               // Check for SCORM 1.2 API
               if ((iframeWindow as any).API) {
                 console.log('SCORM 1.2 API detected in iframe');
                 const initResult = (iframeWindow as any).API.LMSInitialize('');
-                console.log('SCORM 1.2 auto-initialization result:', initResult);
+                console.log('SCORM 1.2 initialization result:', initResult);
               } 
               // Check for SCORM 2004 API
               else if ((iframeWindow as any).API_1484_11) {
                 console.log('SCORM 2004 API detected in iframe');
                 const initResult = (iframeWindow as any).API_1484_11.Initialize('');
-                console.log('SCORM 2004 auto-initialization result:', initResult);
+                console.log('SCORM 2004 initialization result:', initResult);
               } 
               else {
-                console.warn('No SCORM API found in iframe content');
-                // Try to inject API if not found
-                if (iframeWindow.document) {
-                  console.log('Attempting to inject SCORM API into iframe...');
-                  injectSCORMAPIIntoIframe(iframeWindow);
-                }
+                console.log('No SCORM API found, this is normal if injected in HTML');
               }
             } catch (e) {
-              console.log('Cannot access iframe content due to CORS restrictions, this is normal for some SCORM packages');
+              console.log('Cannot access iframe content due to security restrictions (this is normal)');
             }
-          }, 1500); // Increased wait time for better compatibility
+          }, 1000);
         }
       } catch (e) {
-        console.log('Cannot access iframe content (CORS)');
+        console.log('Cannot access iframe window (CORS/security restriction)');
       }
     }
   };
 
-  const injectSCORMAPIIntoIframe = (iframeWindow: Window) => {
-    try {
-      const script = iframeWindow.document.createElement('script');
-      script.textContent = `
-        console.log('Injecting SCORM API directly into iframe...');
-        
-        // SCORM 1.2 API
-        if (!window.API) {
-          window.API = {
-            LMSInitialize: function(param) {
-              console.log('SCORM 1.2 API: LMSInitialize called');
-              return 'true';
-            },
-            LMSFinish: function(param) {
-              console.log('SCORM 1.2 API: LMSFinish called');
-              return 'true';
-            },
-            LMSGetValue: function(element) {
-              console.log('SCORM 1.2 API: LMSGetValue called for:', element);
-              return '';
-            },
-            LMSSetValue: function(element, value) {
-              console.log('SCORM 1.2 API: LMSSetValue called for:', element, 'with value:', value);
-              return 'true';
-            },
-            LMSCommit: function(param) {
-              console.log('SCORM 1.2 API: LMSCommit called');
-              return 'true';
-            },
-            LMSGetLastError: function() { return '0'; },
-            LMSGetErrorString: function(code) { return 'No error'; },
-            LMSGetDiagnostic: function(code) { return 'No diagnostic'; }
-          };
-          console.log('SCORM 1.2 API injected successfully');
-        }
-        
-        // SCORM 2004 API
-        if (!window.API_1484_11) {
-          window.API_1484_11 = {
-            Initialize: function(param) {
-              console.log('SCORM 2004 API: Initialize called');
-              return 'true';
-            },
-            Terminate: function(param) {
-              console.log('SCORM 2004 API: Terminate called');
-              return 'true';
-            },
-            GetValue: function(element) {
-              console.log('SCORM 2004 API: GetValue called for:', element);
-              return '';
-            },
-            SetValue: function(element, value) {
-              console.log('SCORM 2004 API: SetValue called for:', element, 'with value:', value);
-              return 'true';
-            },
-            Commit: function(param) {
-              console.log('SCORM 2004 API: Commit called');
-              return 'true';
-            },
-            GetLastError: function() { return '0'; },
-            GetErrorString: function(code) { return 'No error'; },
-            GetDiagnostic: function(code) { return 'No diagnostic'; }
-          };
-          console.log('SCORM 2004 API injected successfully');
-        }
-      `;
-      iframeWindow.document.head.appendChild(script);
-    } catch (e) {
-      console.warn('Failed to inject SCORM API into iframe:', e);
-    }
-  };
-
-  const handleIframeError = () => {
-    console.error('Iframe failed to load SCORM content');
+  const handleIframeError = (event: any) => {
+    console.error('Iframe failed to load:', event);
+    console.error('Current iframe src:', iframeRef.current?.src);
   };
 
   return {

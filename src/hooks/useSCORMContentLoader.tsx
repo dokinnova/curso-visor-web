@@ -22,6 +22,7 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
   const loadContent = async () => {
     setIsLoading(true);
     setError('');
+    setContentUrl(''); // Clear previous URL
     
     try {
       if (virtualServerRef.current) {
@@ -34,49 +35,53 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       
       // Process all SCORM package files
       let htmlFilesProcessed = 0;
+      const filePromises: Promise<void>[] = [];
+      
       for (const [path, file] of scormPackage.files.entries()) {
         console.log(`Processing file: ${path} (${file.size} bytes, ${file.type})`);
         
         if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
           console.log(`Injecting SCORM API into HTML file: ${path}`);
-          try {
-            const modifiedFile = await createModifiedBlob(file);
-            virtualServerRef.current.addFile(path, modifiedFile);
-            htmlFilesProcessed++;
-          } catch (injectionError) {
-            console.warn(`Failed to inject SCORM API into ${path}, using original:`, injectionError);
-            virtualServerRef.current.addFile(path, file);
-          }
+          filePromises.push(
+            createModifiedBlob(file).then(modifiedFile => {
+              virtualServerRef.current!.addFile(path, modifiedFile);
+              htmlFilesProcessed++;
+            }).catch(injectionError => {
+              console.warn(`Failed to inject SCORM API into ${path}, using original:`, injectionError);
+              virtualServerRef.current!.addFile(path, file);
+            })
+          );
         } else {
           virtualServerRef.current.addFile(path, file);
         }
       }
 
+      // Wait for all files to be processed
+      await Promise.all(filePromises);
       console.log(`Processed ${htmlFilesProcessed} HTML files with SCORM API injection`);
       
       // Enhanced strategy to find main content
-      let resolvedUrl: string | null = null;
+      let finalUrl: string | null = null;
       
       // 1. Try main resource href - clean the URL first
       if (resource.href) {
         console.log(`Trying main resource href: ${resource.href}`);
-        // Remove query parameters like ?type=scorm
         const cleanHref = resource.href.split('?')[0];
         console.log(`Clean href: ${cleanHref}`);
-        resolvedUrl = virtualServerRef.current.resolveUrl(cleanHref);
-        if (resolvedUrl) {
+        finalUrl = virtualServerRef.current.resolveUrl(cleanHref);
+        if (finalUrl) {
           console.log(`SUCCESS: Found content using main href: ${cleanHref}`);
         }
       }
 
       // 2. Try resource files
-      if (!resolvedUrl && resource.files.length > 0) {
+      if (!finalUrl && resource.files.length > 0) {
         console.log('Main href not found, trying resource files...');
         
         for (const resourceFile of resource.files) {
           console.log(`Trying resource file: ${resourceFile}`);
-          resolvedUrl = virtualServerRef.current.resolveUrl(resourceFile);
-          if (resolvedUrl) {
+          finalUrl = virtualServerRef.current.resolveUrl(resourceFile);
+          if (finalUrl) {
             console.log(`SUCCESS: Found content using resource file: ${resourceFile}`);
             break;
           }
@@ -84,7 +89,7 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       }
 
       // 3. Search for common SCORM entry points
-      if (!resolvedUrl) {
+      if (!finalUrl) {
         console.log('No specific resource file found, searching for SCORM entry points...');
         const scormEntryPoints = [
           'index.html', 'index.htm',
@@ -97,8 +102,8 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
         ];
 
         for (const entryPoint of scormEntryPoints) {
-          resolvedUrl = virtualServerRef.current.resolveUrl(entryPoint);
-          if (resolvedUrl) {
+          finalUrl = virtualServerRef.current.resolveUrl(entryPoint);
+          if (finalUrl) {
             console.log(`SUCCESS: Found SCORM entry point: ${entryPoint}`);
             break;
           }
@@ -106,7 +111,7 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       }
 
       // 4. Fallback to any HTML file
-      if (!resolvedUrl) {
+      if (!finalUrl) {
         console.log('Using fallback: searching for any HTML file...');
         const allFiles = virtualServerRef.current.getAllFiles();
         const htmlFiles = allFiles.filter(f => 
@@ -118,7 +123,6 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
         console.log(`Found ${htmlFiles.length} HTML files:`, htmlFiles.map(f => f.path));
 
         if (htmlFiles.length > 0) {
-          // Prioritize main entry files
           const prioritizedFile = htmlFiles.find(f => 
             ['index', 'main', 'start', 'launch', 'content'].some(name => 
               f.path.toLowerCase().includes(name)
@@ -126,15 +130,17 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
           ) || htmlFiles[0];
           
           console.log(`Using HTML file: ${prioritizedFile.path}`);
-          setContentUrl(prioritizedFile.url);
-        } else {
-          throw new Error(`No se encontraron archivos HTML ejecutables en el paquete SCORM. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
+          finalUrl = prioritizedFile.url;
         }
-      } else {
-        setContentUrl(resolvedUrl);
       }
 
-      console.log(`Final content URL set: ${contentUrl || resolvedUrl}`);
+      if (finalUrl) {
+        console.log(`Final content URL: ${finalUrl}`);
+        setContentUrl(finalUrl);
+      } else {
+        const allFiles = virtualServerRef.current.getAllFiles();
+        throw new Error(`No se encontraron archivos HTML ejecutables en el paquete SCORM. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
+      }
 
     } catch (err) {
       console.error('Error loading SCORM content:', err);
