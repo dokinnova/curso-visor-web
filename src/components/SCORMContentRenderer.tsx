@@ -43,16 +43,22 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
       }
       virtualServerRef.current = new VirtualFileServer();
 
-      console.log('Setting up virtual file server with SCORM API injection...');
+      console.log('=== LOADING SCORM CONTENT ===');
       console.log('Resource to load:', resource);
+      console.log('Resource href:', resource.href);
+      console.log('Resource files:', resource.files);
       
-      // Agregar archivos al servidor virtual, inyectando API SCORM en archivos HTML
+      // Cargar TODOS los archivos del paquete SCORM al servidor virtual
+      let htmlFilesProcessed = 0;
       for (const [path, file] of scormPackage.files.entries()) {
+        console.log(`Processing file: ${path} (${file.size} bytes, ${file.type})`);
+        
         if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
           console.log(`Injecting SCORM API into HTML file: ${path}`);
           try {
             const modifiedFile = await createModifiedBlob(file);
             virtualServerRef.current.addFile(path, modifiedFile);
+            htmlFilesProcessed++;
           } catch (injectionError) {
             console.warn(`Failed to inject SCORM API into ${path}, using original:`, injectionError);
             virtualServerRef.current.addFile(path, file);
@@ -62,56 +68,73 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
         }
       }
 
-      console.log('Available files in virtual server:');
-      virtualServerRef.current.getAllFiles().forEach(({ path, url }) => {
-        console.log(`  ${path} -> ${url}`);
-      });
-
-      // Intentar resolver la URL del recurso principal
-      let resolvedUrl = virtualServerRef.current.resolveUrl(resource.href);
+      console.log(`Processed ${htmlFilesProcessed} HTML files with SCORM API injection`);
       
-      if (!resolvedUrl) {
-        console.log('Main resource not found, searching for alternative entry points...');
-        
-        // Lista de posibles puntos de entrada
-        const entryPoints = [
-          'index.html',
-          'main.html', 
-          'start.html',
-          'launch.html',
-          'default.html',
-          // También buscar archivos listados en el recurso
-          ...resource.files.filter(f => f.toLowerCase().endsWith('.html'))
-        ];
-        
-        for (const entryPoint of entryPoints) {
-          resolvedUrl = virtualServerRef.current.resolveUrl(entryPoint);
+      // Debug: mostrar todos los archivos cargados
+      virtualServerRef.current.debugListFiles();
+
+      // Intentar encontrar el archivo principal del recurso
+      let resolvedUrl: string | null = null;
+      
+      if (resource.href) {
+        console.log(`Trying to resolve main resource: ${resource.href}`);
+        resolvedUrl = virtualServerRef.current.resolveUrl(resource.href);
+      }
+
+      // Si no se puede resolver el href principal, probar con los archivos del recurso
+      if (!resolvedUrl && resource.files.length > 0) {
+        console.log('Main href not found, trying resource files...');
+        for (const resourceFile of resource.files) {
+          console.log(`Trying resource file: ${resourceFile}`);
+          resolvedUrl = virtualServerRef.current.resolveUrl(resourceFile);
           if (resolvedUrl) {
-            console.log(`Found entry point: ${entryPoint} -> ${resolvedUrl}`);
+            console.log(`Found content using resource file: ${resourceFile}`);
             break;
           }
         }
       }
-      
+
+      // Si aún no encontramos nada, buscar archivos HTML comunes
+      if (!resolvedUrl) {
+        console.log('No specific resource file found, searching for common entry points...');
+        const commonEntryPoints = [
+          'index.html',
+          'main.html',
+          'start.html',
+          'launch.html',
+          'default.html',
+          'content.html',
+          'lesson.html'
+        ];
+
+        for (const entryPoint of commonEntryPoints) {
+          resolvedUrl = virtualServerRef.current.resolveUrl(entryPoint);
+          if (resolvedUrl) {
+            console.log(`Found entry point: ${entryPoint}`);
+            break;
+          }
+        }
+      }
+
       if (resolvedUrl) {
-        console.log(`Loading content from resolved URL: ${resolvedUrl}`);
+        console.log(`SUCCESS: Loading content from: ${resolvedUrl}`);
         setContentUrl(resolvedUrl);
       } else {
-        // Como último recurso, usar cualquier archivo HTML disponible
-        const htmlFiles = Array.from(scormPackage.files.keys()).filter(path => 
-          path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')
+        // Último intento: usar cualquier archivo HTML disponible
+        const allFiles = virtualServerRef.current.getAllFiles();
+        const htmlFiles = allFiles.filter(f => 
+          f.mimeType === 'text/html' || 
+          f.path.toLowerCase().endsWith('.html') || 
+          f.path.toLowerCase().endsWith('.htm')
         );
 
+        console.log(`Found ${htmlFiles.length} HTML files:`, htmlFiles);
+
         if (htmlFiles.length > 0) {
-          const fallbackUrl = virtualServerRef.current.resolveUrl(htmlFiles[0]);
-          if (fallbackUrl) {
-            console.log(`Using HTML fallback: ${htmlFiles[0]} -> ${fallbackUrl}`);
-            setContentUrl(fallbackUrl);
-          } else {
-            throw new Error(`No se pudo cargar ningún archivo HTML del paquete SCORM`);
-          }
+          console.log(`Using first available HTML file: ${htmlFiles[0].path}`);
+          setContentUrl(htmlFiles[0].url);
         } else {
-          throw new Error('No se encontraron archivos HTML en el paquete SCORM');
+          throw new Error(`No se encontraron archivos HTML ejecutables en el paquete SCORM. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
         }
       }
 
