@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { SCORMPackage, Resource } from '@/types/scorm';
 import VirtualFileServer from '@/utils/virtualFileServer';
+import { createModifiedBlob } from '@/utils/scormInjector';
 
 interface SCORMContentRendererProps {
   resource: Resource;
@@ -26,7 +27,6 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
   useEffect(() => {
     loadContent();
     return () => {
-      // Limpiar el servidor virtual al desmontar
       if (virtualServerRef.current) {
         virtualServerRef.current.clear();
       }
@@ -38,19 +38,29 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
     setError('');
     
     try {
-      // Crear nuevo servidor virtual
       if (virtualServerRef.current) {
         virtualServerRef.current.clear();
       }
       virtualServerRef.current = new VirtualFileServer();
 
-      // Agregar todos los archivos al servidor virtual
-      console.log('Setting up virtual file server...');
-      scormPackage.files.forEach((file, path) => {
-        virtualServerRef.current!.addFile(path, file);
-      });
+      console.log('Setting up virtual file server with SCORM API injection...');
+      
+      // Agregar archivos al servidor virtual, inyectando API SCORM en archivos HTML
+      for (const [path, file] of scormPackage.files.entries()) {
+        if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
+          console.log(`Injecting SCORM API into HTML file: ${path}`);
+          try {
+            const modifiedFile = await createModifiedBlob(file);
+            virtualServerRef.current.addFile(path, modifiedFile);
+          } catch (injectionError) {
+            console.warn(`Failed to inject SCORM API into ${path}, using original:`, injectionError);
+            virtualServerRef.current.addFile(path, file);
+          }
+        } else {
+          virtualServerRef.current.addFile(path, file);
+        }
+      }
 
-      // Mostrar archivos disponibles
       console.log('Available files in virtual server:');
       virtualServerRef.current.getAllFiles().forEach(({ path, url }) => {
         console.log(`  ${path} -> ${url}`);
@@ -63,7 +73,6 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
         console.log(`Loading content from resolved URL: ${resolvedUrl}`);
         setContentUrl(resolvedUrl);
       } else {
-        // Fallback: buscar cualquier archivo HTML
         console.log('Main resource not found, looking for HTML fallback...');
         const htmlFiles = Array.from(scormPackage.files.keys()).filter(path => 
           path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')
@@ -94,18 +103,30 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
     console.log('Iframe loaded successfully');
     setIsLoading(false);
     
-    // Agregar listener para errores dentro del iframe
+    // Intentar establecer comunicación con el iframe
     if (iframeRef.current) {
       try {
         const iframeWindow = iframeRef.current.contentWindow;
         if (iframeWindow) {
+          // Verificar si la API SCORM está disponible
+          setTimeout(() => {
+            try {
+              if (iframeWindow.API) {
+                console.log('SCORM API detected in iframe');
+              } else {
+                console.warn('SCORM API not found in iframe');
+              }
+            } catch (e) {
+              console.log('Cannot access iframe content due to CORS restrictions');
+            }
+          }, 1000);
+          
           iframeWindow.addEventListener('error', (event) => {
             console.error('Error inside iframe:', event.error);
             setError(`Error en el contenido: ${event.error?.message || 'Error desconocido'}`);
           });
         }
       } catch (e) {
-        // Ignorar errores de CORS al acceder al iframe
         console.log('Cannot access iframe content (CORS)');
       }
     }
@@ -143,7 +164,8 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Cargando contenido...</p>
+          <p className="text-gray-600">Cargando contenido SCORM...</p>
+          <p className="text-sm text-gray-500 mt-2">Inyectando API SCORM...</p>
         </div>
       </div>
     );
@@ -155,7 +177,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
       src={contentUrl}
       className="w-full h-full border-0 rounded-b-lg"
       title={title}
-      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads allow-top-navigation-by-user-activation"
       onLoad={handleIframeLoad}
       onError={handleIframeError}
     />
