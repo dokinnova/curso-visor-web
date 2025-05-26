@@ -2,12 +2,12 @@
 import { Resource } from '@/types/scorm';
 
 export function parseResources(doc: Document): Resource[] {
-  console.log('=== PARSEANDO RECURSOS SCORM 1.2 ===');
+  console.log('=== PARSING SCORM 1.2 RESOURCES ===');
   
   const resources: Resource[] = [];
   const resourceElements = doc.querySelectorAll('resources resource');
 
-  console.log(`Encontrados ${resourceElements.length} elementos resource`);
+  console.log(`Found ${resourceElements.length} resource elements`);
 
   resourceElements.forEach((resourceElement, index) => {
     const identifier = resourceElement.getAttribute('identifier') || `res-${index}`;
@@ -15,13 +15,13 @@ export function parseResources(doc: Document): Resource[] {
     const href = resourceElement.getAttribute('href') || '';
     const adlcp_scormtype = resourceElement.getAttribute('adlcp:scormtype') || '';
 
-    console.log(`Recurso ${index + 1}:`);
+    console.log(`Resource ${index + 1}:`);
     console.log(`  - ID: ${identifier}`);
-    console.log(`  - Tipo: ${type}`);
+    console.log(`  - Type: ${type}`);
     console.log(`  - SCORM Type: ${adlcp_scormtype}`);
     console.log(`  - Href: ${href}`);
 
-    // Recopilar archivos del recurso
+    // Collect resource files
     const files: string[] = [];
     const fileElements = resourceElement.querySelectorAll('file');
     
@@ -29,15 +29,15 @@ export function parseResources(doc: Document): Resource[] {
       const filehref = fileElement.getAttribute('href');
       if (filehref) {
         files.push(filehref);
-        console.log(`    - Archivo: ${filehref}`);
+        console.log(`    - File: ${filehref}`);
       }
     });
 
-    // Si no hay href principal pero hay archivos, intentar determinar el archivo principal
+    // If no main href but there are files, try to determine main file
     let resolvedHref = href;
     if (!resolvedHref && files.length > 0) {
       resolvedHref = findMainFile(files);
-      console.log(`  - Href resuelto automáticamente: ${resolvedHref}`);
+      console.log(`  - Auto-resolved href: ${resolvedHref}`);
     }
 
     resources.push({
@@ -48,12 +48,12 @@ export function parseResources(doc: Document): Resource[] {
     });
   });
 
-  console.log('=== RECURSOS PARSEADOS COMPLETAMENTE ===');
+  console.log('=== RESOURCES PARSING COMPLETE ===');
   return resources;
 }
 
 function findMainFile(files: string[]): string {
-  // Prioridad de archivos comunes en SCORM 1.2
+  // Priority of common files in SCORM 1.2
   const commonEntryPoints = [
     'index.html',
     'index.htm',
@@ -71,29 +71,29 @@ function findMainFile(files: string[]): string {
     'lesson.htm'
   ];
 
-  // Buscar archivos de entrada comunes
+  // Look for common entry point files
   for (const entryPoint of commonEntryPoints) {
     const found = files.find(file => 
       file.toLowerCase().endsWith(entryPoint.toLowerCase()) ||
       file.toLowerCase() === entryPoint.toLowerCase()
     );
     if (found) {
-      console.log(`Archivo principal detectado: ${found}`);
+      console.log(`Main file detected: ${found}`);
       return found;
     }
   }
 
-  // Si no encuentra ninguno común, usar el primer archivo HTML
+  // If none found, use first HTML file
   const htmlFile = files.find(file => 
     file.toLowerCase().endsWith('.html') || 
     file.toLowerCase().endsWith('.htm')
   );
   
   if (htmlFile) {
-    console.log(`Usando primer archivo HTML: ${htmlFile}`);
+    console.log(`Using first HTML file: ${htmlFile}`);
     return htmlFile;
   }
 
-  // Como último recurso, usar el primer archivo
+  // As last resort, use first file
   return files[0] || '';
 }

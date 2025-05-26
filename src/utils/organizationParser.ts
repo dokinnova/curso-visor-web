@@ -2,48 +2,48 @@
 import { Organization, Item } from '@/types/scorm';
 
 export function parseOrganizations(doc: Document): Organization[] {
-  console.log('=== PARSEANDO ORGANIZACIONES SCORM 1.2 ===');
+  console.log('=== PARSING SCORM 1.2 ORGANIZATIONS ===');
   
   const organizations: Organization[] = [];
   
-  // Buscar el contenedor de organizaciones
+  // Find organizations container
   const organizationsContainer = doc.querySelector('organizations');
   if (!organizationsContainer) {
-    console.error('No se encontró contenedor organizations');
+    console.error('No organizations container found');
     return [];
   }
 
-  console.log('Contenedor organizations encontrado');
+  console.log('Organizations container found');
   
-  // Buscar todos los elementos organization
+  // Find all organization elements
   const orgElements = organizationsContainer.querySelectorAll('organization');
-  console.log(`Encontrados ${orgElements.length} elementos organization`);
+  console.log(`Found ${orgElements.length} organization elements`);
 
   if (orgElements.length === 0) {
-    console.warn('No se encontraron elementos organization, creando organización por defecto...');
+    console.warn('No organization elements found, creating default organization...');
     return createDefaultOrganization(organizationsContainer);
   }
 
   orgElements.forEach((orgElement, index) => {
-    console.log(`=== PROCESANDO ORGANIZACIÓN ${index + 1} ===`);
+    console.log(`=== PROCESSING ORGANIZATION ${index + 1} ===`);
     
     const identifier = orgElement.getAttribute('identifier') || `org-${index}`;
     
-    // Buscar título con múltiples estrategias
+    // Find title with multiple strategies
     let title = 'Organización sin título';
     const titleElement = orgElement.querySelector(':scope > title');
     if (titleElement?.textContent?.trim()) {
       title = titleElement.textContent.trim();
     } else {
-      // Buscar en atributos
+      // Try attribute
       title = orgElement.getAttribute('title') || `Organización ${index + 1}`;
     }
     
-    console.log(`Organización: ${identifier} - ${title}`);
+    console.log(`Organization: ${identifier} - ${title}`);
 
-    // Parsear items de esta organización
+    // Parse items for this organization
     const items = parseItems(orgElement);
-    console.log(`Items parseados: ${items.length}`);
+    console.log(`Items parsed: ${items.length}`);
 
     if (items.length > 0) {
       organizations.push({
@@ -54,17 +54,17 @@ export function parseOrganizations(doc: Document): Organization[] {
     }
   });
 
-  console.log('=== FIN PARSING ORGANIZACIONES ===');
+  console.log('=== ORGANIZATIONS PARSING COMPLETE ===');
   return organizations;
 }
 
 function createDefaultOrganization(organizationsContainer: Element): Organization[] {
-  console.log('Creando organización por defecto...');
+  console.log('Creating default organization...');
   
-  // Buscar items directamente en el contenedor
+  // Look for items directly in the container
   const directItems = organizationsContainer.querySelectorAll('item');
   if (directItems.length === 0) {
-    console.warn('No se encontraron items en organizations');
+    console.warn('No items found in organizations');
     return [];
   }
 
@@ -85,19 +85,19 @@ function createDefaultOrganization(organizationsContainer: Element): Organizatio
 }
 
 export function parseItems(parent: Element): Item[] {
-  console.log('=== PARSEANDO ITEMS SCORM 1.2 ===');
+  console.log('=== PARSING SCORM 1.2 ITEMS ===');
   
   const items: Item[] = [];
   
-  // Buscar items directos primero
+  // Look for direct items first
   let itemElements = parent.querySelectorAll(':scope > item');
   
-  // Si no hay items directos, buscar todos los items
+  // If no direct items, look for all items
   if (itemElements.length === 0) {
     itemElements = parent.querySelectorAll('item');
   }
 
-  console.log(`Encontrados ${itemElements.length} items para procesar`);
+  console.log(`Found ${itemElements.length} items to process`);
 
   itemElements.forEach((itemElement, index) => {
     const item = parseItemElement(itemElement, index);
@@ -110,47 +110,47 @@ export function parseItems(parent: Element): Item[] {
 }
 
 export function parseItemElement(itemElement: Element, index: number): Item | null {
-  console.log(`--- Procesando item ${index + 1} ---`);
+  console.log(`--- Processing item ${index + 1} ---`);
   
   const identifier = itemElement.getAttribute('identifier') || `item-${index}`;
   const identifierref = itemElement.getAttribute('identifierref') || undefined;
   const isVisible = itemElement.getAttribute('isvisible') !== 'false';
   
-  // Solo procesar items visibles
+  // Only process visible items
   if (!isVisible) {
-    console.log(`Item ${identifier} no es visible, omitiendo`);
+    console.log(`Item ${identifier} is not visible, skipping`);
     return null;
   }
   
   console.log('Item identifier:', identifier);
   console.log('Item identifierref:', identifierref);
   
-  // Buscar título con múltiples estrategias para SCORM 1.2
+  // Find title with multiple strategies for SCORM 1.2
   let title = '';
   
-  // Estrategia 1: elemento title directo
+  // Strategy 1: direct title element
   const titleElement = itemElement.querySelector(':scope > title');
   if (titleElement?.textContent?.trim()) {
     title = titleElement.textContent.trim();
   }
   
-  // Estrategia 2: atributo title
+  // Strategy 2: title attribute
   if (!title) {
     title = itemElement.getAttribute('title') || '';
   }
   
-  // Estrategia 3: usar identifier como fallback
+  // Strategy 3: use identifier as fallback
   if (!title) {
     title = identifier;
   }
   
   console.log('Item title:', title);
 
-  // Determinar si es un item de contenido o solo navegación
+  // Determine if it's a content item or just navigation
   const hasContent = !!identifierref;
-  console.log('Item tiene contenido:', hasContent);
+  console.log('Item has content:', hasContent);
 
-  // Buscar items hijos recursivamente
+  // Find child items recursively
   const childItems = itemElement.querySelectorAll(':scope > item');
   const children: Item[] = [];
   
@@ -162,7 +162,7 @@ export function parseItemElement(itemElement: Element, index: number): Item | nu
   });
 
   if (children.length > 0) {
-    console.log(`Item tiene ${children.length} sub-items`);
+    console.log(`Item has ${children.length} sub-items`);
   }
 
   const item: Item = {
@@ -172,6 +172,6 @@ export function parseItemElement(itemElement: Element, index: number): Item | nu
     children: children.length > 0 ? children : undefined
   };
 
-  console.log('Item procesado:', item);
+  console.log('Item processed:', item);
   return item;
 }
