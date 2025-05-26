@@ -22,7 +22,7 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
   const loadContent = async () => {
     setIsLoading(true);
     setError('');
-    setContentUrl(''); // Clear previous URL
+    setContentUrl('');
     
     try {
       if (virtualServerRef.current) {
@@ -30,24 +30,20 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       }
       virtualServerRef.current = new VirtualFileServer();
 
-      console.log('=== LOADING SCORM CONTENT ===');
-      console.log('Resource to load:', resource);
+      console.log('=== SIMPLE SCORM LOADING ===');
+      console.log('Resource:', resource);
       
-      // Process all SCORM package files
-      let htmlFilesProcessed = 0;
+      // Process files first
       const filePromises: Promise<void>[] = [];
       
       for (const [path, file] of scormPackage.files.entries()) {
-        console.log(`Processing file: ${path} (${file.size} bytes, ${file.type})`);
-        
         if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
-          console.log(`Injecting SCORM API into HTML file: ${path}`);
+          console.log(`Processing HTML file: ${path}`);
           filePromises.push(
             createModifiedBlob(file).then(modifiedFile => {
               virtualServerRef.current!.addFile(path, modifiedFile);
-              htmlFilesProcessed++;
             }).catch(injectionError => {
-              console.warn(`Failed to inject SCORM API into ${path}, using original:`, injectionError);
+              console.warn(`Using original HTML file ${path}:`, injectionError);
               virtualServerRef.current!.addFile(path, file);
             })
           );
@@ -56,90 +52,71 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
         }
       }
 
-      // Wait for all files to be processed
       await Promise.all(filePromises);
-      console.log(`Processed ${htmlFilesProcessed} HTML files with SCORM API injection`);
       
-      // Enhanced strategy to find main content
+      // Strategy 1: Try resource files directly (most reliable)
       let finalUrl: string | null = null;
       
-      // 1. Try main resource href - clean the URL first
-      if (resource.href) {
-        console.log(`Trying main resource href: ${resource.href}`);
-        const cleanHref = resource.href.split('?')[0];
-        console.log(`Clean href: ${cleanHref}`);
-        finalUrl = virtualServerRef.current.resolveUrl(cleanHref);
-        if (finalUrl) {
-          console.log(`SUCCESS: Found content using main href: ${cleanHref}`);
-        }
-      }
-
-      // 2. Try resource files
-      if (!finalUrl && resource.files.length > 0) {
-        console.log('Main href not found, trying resource files...');
+      if (resource.files && resource.files.length > 0) {
+        console.log('Trying resource files:', resource.files);
         
-        for (const resourceFile of resource.files) {
-          console.log(`Trying resource file: ${resourceFile}`);
-          finalUrl = virtualServerRef.current.resolveUrl(resourceFile);
+        // Look for HTML files in resource files list
+        const htmlFiles = resource.files.filter(f => 
+          f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')
+        );
+        
+        for (const htmlFile of htmlFiles) {
+          finalUrl = virtualServerRef.current.resolveUrl(htmlFile);
           if (finalUrl) {
-            console.log(`SUCCESS: Found content using resource file: ${resourceFile}`);
+            console.log(`SUCCESS: Using resource file ${htmlFile}`);
             break;
           }
         }
       }
-
-      // 3. Search for common SCORM entry points
+      
+      // Strategy 2: If no HTML in resource files, try common entry points
       if (!finalUrl) {
-        console.log('No specific resource file found, searching for SCORM entry points...');
-        const scormEntryPoints = [
+        console.log('No HTML in resource files, searching for entry points...');
+        const entryPoints = [
           'index.html', 'index.htm',
-          'course/index.html', 'course/index.htm',
-          'content/index.html', 'content/index.htm',
-          'default.html', 'default.htm',
-          'main.html', 'main.htm',
+          'main.html', 'main.htm', 
           'start.html', 'start.htm',
-          'launch.html', 'launch.htm'
+          'launch.html', 'launch.htm',
+          'default.html', 'default.htm'
         ];
 
-        for (const entryPoint of scormEntryPoints) {
-          finalUrl = virtualServerRef.current.resolveUrl(entryPoint);
+        for (const entry of entryPoints) {
+          finalUrl = virtualServerRef.current.resolveUrl(entry);
           if (finalUrl) {
-            console.log(`SUCCESS: Found SCORM entry point: ${entryPoint}`);
+            console.log(`SUCCESS: Found entry point ${entry}`);
             break;
           }
         }
       }
-
-      // 4. Fallback to any HTML file
+      
+      // Strategy 3: Use any HTML file available
       if (!finalUrl) {
-        console.log('Using fallback: searching for any HTML file...');
+        console.log('Using any available HTML file...');
         const allFiles = virtualServerRef.current.getAllFiles();
-        const htmlFiles = allFiles.filter(f => 
+        const htmlFile = allFiles.find(f => 
           f.mimeType === 'text/html' || 
-          f.path.toLowerCase().endsWith('.html') || 
+          f.path.toLowerCase().endsWith('.html') ||
           f.path.toLowerCase().endsWith('.htm')
         );
-
-        console.log(`Found ${htmlFiles.length} HTML files:`, htmlFiles.map(f => f.path));
-
-        if (htmlFiles.length > 0) {
-          const prioritizedFile = htmlFiles.find(f => 
-            ['index', 'main', 'start', 'launch', 'content'].some(name => 
-              f.path.toLowerCase().includes(name)
-            )
-          ) || htmlFiles[0];
-          
-          console.log(`Using HTML file: ${prioritizedFile.path}`);
-          finalUrl = prioritizedFile.url;
+        
+        if (htmlFile) {
+          finalUrl = htmlFile.url;
+          console.log(`SUCCESS: Using HTML file ${htmlFile.path}`);
         }
       }
 
       if (finalUrl) {
-        console.log(`Final content URL: ${finalUrl}`);
+        console.log(`Final URL set: ${finalUrl}`);
         setContentUrl(finalUrl);
       } else {
         const allFiles = virtualServerRef.current.getAllFiles();
-        throw new Error(`No se encontraron archivos HTML ejecutables en el paquete SCORM. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
+        console.error('Available files:', allFiles.map(f => f.path));
+        throw new Error(`No se encontró contenido HTML ejecutable. Archivos disponibles: ${allFiles.map(f => f.path).join(', ')}`);
       }
 
     } catch (err) {
