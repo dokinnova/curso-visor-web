@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, BookOpen, ChevronRight, Home, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +22,12 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
     // Configurar la API SCORM cuando se monta el componente
     setupSCORMAPI();
     
+    // Debug: mostrar todos los archivos disponibles
+    console.log('Available files in SCORM package:');
+    course.files.forEach((file, path) => {
+      console.log('- ', path);
+    });
+    
     // Seleccionar el primer item automáticamente
     if (course.manifest.organizations.length > 0) {
       const firstOrg = course.manifest.organizations[0];
@@ -39,8 +44,11 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
     if (item.identifierref) {
       const resource = course.manifest.resources.find(r => r.identifier === item.identifierref);
       if (resource) {
+        console.log('Found resource:', resource);
         setCurrentResource(resource);
         loadContent(resource);
+      } else {
+        console.error('Resource not found for identifier:', item.identifierref);
       }
     }
   };
@@ -51,13 +59,56 @@ const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
       return;
     }
 
-    const file = course.files.get(resource.href);
+    console.log('Attempting to load resource with href:', resource.href);
+
+    // Separar el archivo base de los query parameters
+    const [baseHref] = resource.href.split('?');
+    console.log('Base href:', baseHref);
+
+    // Buscar el archivo por nombre base primero
+    let file = course.files.get(resource.href);
+    
+    if (!file) {
+      // Si no se encuentra con query parameters, buscar sin ellos
+      file = course.files.get(baseHref);
+      console.log('Looking for file without query params:', baseHref);
+    }
+
+    if (!file) {
+      // Buscar archivos que contengan el nombre base
+      const matchingFiles = Array.from(course.files.keys()).filter(path => 
+        path.includes(baseHref) || baseHref.includes(path.split('/').pop() || '')
+      );
+      console.log('Matching files found:', matchingFiles);
+      
+      if (matchingFiles.length > 0) {
+        file = course.files.get(matchingFiles[0]);
+        console.log('Using matching file:', matchingFiles[0]);
+      }
+    }
+
     if (file) {
       const url = URL.createObjectURL(file);
       setContentUrl(url);
       console.log('Loading content from:', url);
     } else {
-      console.error('File not found:', resource.href);
+      console.error('File not found. Available files:');
+      course.files.forEach((_, path) => console.log('  ', path));
+      console.error('Searched for:', resource.href, 'and', baseHref);
+      
+      // Intentar cargar el primer archivo HTML disponible como fallback
+      const htmlFiles = Array.from(course.files.keys()).filter(path => 
+        path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')
+      );
+      
+      if (htmlFiles.length > 0) {
+        console.log('Using fallback HTML file:', htmlFiles[0]);
+        const fallbackFile = course.files.get(htmlFiles[0]);
+        if (fallbackFile) {
+          const url = URL.createObjectURL(fallbackFile);
+          setContentUrl(url);
+        }
+      }
     }
   };
 
