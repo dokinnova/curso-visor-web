@@ -34,39 +34,58 @@ class VirtualFileServer {
   }
 
   resolveUrl(href: string): string | null {
-    // Remover query parameters para buscar el archivo base
+    console.log(`Virtual file server: Resolving ${href}`);
+    
+    // Si la URL contiene parámetros, intentar cargar el archivo base
     const [basePath] = href.split('?');
     const normalizedPath = this.normalizePath(basePath);
     
-    console.log(`Virtual file server: Resolving ${href} -> ${normalizedPath}`);
-    
-    // Buscar coincidencia exacta
+    // Buscar coincidencia exacta primero
     let file = this.files.get(normalizedPath);
     
-    if (!file) {
-      // Buscar coincidencias parciales
-      for (const [filePath, fileData] of this.files) {
-        if (filePath.endsWith(normalizedPath) || normalizedPath.endsWith(filePath)) {
-          console.log(`Virtual file server: Found partial match ${filePath} for ${normalizedPath}`);
-          file = fileData;
-          break;
-        }
+    if (file) {
+      console.log(`Virtual file server: Found exact match for ${normalizedPath}`);
+      return file.url;
+    }
+    
+    // Si el archivo principal no se encuentra, buscar archivos HTML principales
+    const htmlCandidates = [
+      'index.html',
+      'main.html',
+      'start.html',
+      'launch.html',
+      normalizedPath
+    ];
+    
+    for (const candidate of htmlCandidates) {
+      file = this.files.get(candidate);
+      if (file) {
+        console.log(`Virtual file server: Found HTML candidate ${candidate}`);
+        return file.url;
       }
     }
     
-    if (!file) {
-      // Buscar por nombre de archivo
-      const fileName = normalizedPath.split('/').pop() || '';
+    // Buscar coincidencias parciales por nombre de archivo
+    const fileName = normalizedPath.split('/').pop() || '';
+    if (fileName) {
       for (const [filePath, fileData] of this.files) {
         if (filePath.split('/').pop() === fileName) {
           console.log(`Virtual file server: Found filename match ${filePath} for ${fileName}`);
-          file = fileData;
-          break;
+          return fileData.url;
         }
       }
     }
+    
+    // Buscar cualquier archivo HTML si no encontramos el principal
+    for (const [filePath, fileData] of this.files) {
+      if (filePath.toLowerCase().endsWith('.html') || filePath.toLowerCase().endsWith('.htm')) {
+        console.log(`Virtual file server: Using HTML fallback ${filePath}`);
+        return fileData.url;
+      }
+    }
 
-    return file ? file.url : null;
+    console.warn(`Virtual file server: Could not resolve ${href}`);
+    return null;
   }
 
   private normalizePath(path: string): string {
@@ -103,7 +122,6 @@ class VirtualFileServer {
   }
 
   clear(): void {
-    // Revocar todas las URLs de objetos para liberar memoria
     this.files.forEach(file => {
       URL.revokeObjectURL(file.url);
     });

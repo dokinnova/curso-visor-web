@@ -44,6 +44,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
       virtualServerRef.current = new VirtualFileServer();
 
       console.log('Setting up virtual file server with SCORM API injection...');
+      console.log('Resource to load:', resource);
       
       // Agregar archivos al servidor virtual, inyectando API SCORM en archivos HTML
       for (const [path, file] of scormPackage.files.entries()) {
@@ -66,14 +67,37 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
         console.log(`  ${path} -> ${url}`);
       });
 
-      // Resolver la URL del recurso
-      const resolvedUrl = virtualServerRef.current.resolveUrl(resource.href);
+      // Intentar resolver la URL del recurso principal
+      let resolvedUrl = virtualServerRef.current.resolveUrl(resource.href);
+      
+      if (!resolvedUrl) {
+        console.log('Main resource not found, searching for alternative entry points...');
+        
+        // Lista de posibles puntos de entrada
+        const entryPoints = [
+          'index.html',
+          'main.html', 
+          'start.html',
+          'launch.html',
+          'default.html',
+          // También buscar archivos listados en el recurso
+          ...resource.files.filter(f => f.toLowerCase().endsWith('.html'))
+        ];
+        
+        for (const entryPoint of entryPoints) {
+          resolvedUrl = virtualServerRef.current.resolveUrl(entryPoint);
+          if (resolvedUrl) {
+            console.log(`Found entry point: ${entryPoint} -> ${resolvedUrl}`);
+            break;
+          }
+        }
+      }
       
       if (resolvedUrl) {
         console.log(`Loading content from resolved URL: ${resolvedUrl}`);
         setContentUrl(resolvedUrl);
       } else {
-        console.log('Main resource not found, looking for HTML fallback...');
+        // Como último recurso, usar cualquier archivo HTML disponible
         const htmlFiles = Array.from(scormPackage.files.keys()).filter(path => 
           path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')
         );
@@ -84,7 +108,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
             console.log(`Using HTML fallback: ${htmlFiles[0]} -> ${fallbackUrl}`);
             setContentUrl(fallbackUrl);
           } else {
-            throw new Error(`No se pudo cargar el archivo de respaldo: ${htmlFiles[0]}`);
+            throw new Error(`No se pudo cargar ningún archivo HTML del paquete SCORM`);
           }
         } else {
           throw new Error('No se encontraron archivos HTML en el paquete SCORM');
@@ -111,7 +135,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
           // Verificar si la API SCORM está disponible
           setTimeout(() => {
             try {
-              if (iframeWindow.API) {
+              if ((iframeWindow as any).API) {
                 console.log('SCORM API detected in iframe');
               } else {
                 console.warn('SCORM API not found in iframe');
@@ -165,7 +189,7 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <p className="text-gray-600">Cargando contenido SCORM...</p>
-          <p className="text-sm text-gray-500 mt-2">Inyectando API SCORM...</p>
+          <p className="text-sm text-gray-500 mt-2">Analizando archivos del paquete...</p>
         </div>
       </div>
     );
