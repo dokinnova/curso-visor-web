@@ -17,12 +17,32 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
   currentItem,
   onSelectItem
 }) => {
-  console.log('=== RENDERIZANDO NAVEGACIÓN ===');
-  console.log('Curso recibido:', course?.manifest?.title);
-  console.log('Organizaciones:', course?.manifest?.organizations?.length || 0);
+  console.log('=== RENDERIZANDO NAVEGACIÓN - DEBUG COMPLETO ===');
+  console.log('Curso completo recibido:', course);
+  console.log('Manifest:', course?.manifest);
+  console.log('Título del curso:', course?.manifest?.title);
+  console.log('Organizaciones completas:', course?.manifest?.organizations);
+  console.log('Número de organizaciones:', course?.manifest?.organizations?.length || 0);
+  
+  // Debug cada organización individualmente
+  if (course?.manifest?.organizations) {
+    course.manifest.organizations.forEach((org, index) => {
+      console.log(`=== ORGANIZACIÓN ${index + 1} ===`);
+      console.log('ID:', org.identifier);
+      console.log('Título:', org.title);
+      console.log('Items:', org.items);
+      console.log('Número de items:', org.items?.length || 0);
+      
+      if (org.items && org.items.length > 0) {
+        org.items.forEach((item, itemIndex) => {
+          console.log(`  Item ${itemIndex + 1}:`, item);
+        });
+      }
+    });
+  }
   
   if (!course?.manifest?.organizations || course.manifest.organizations.length === 0) {
-    console.warn('No hay organizaciones para mostrar');
+    console.warn('No hay organizaciones para mostrar - mostrando mensaje de error');
     return (
       <div className="w-80 bg-white border-r shadow-sm">
         <div className="p-4">
@@ -35,6 +55,9 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
             <FileText className="h-8 w-8 mx-auto mb-2" />
             <p>No se encontraron temas</p>
             <p className="text-sm">Revisa el archivo SCORM</p>
+            <p className="text-xs mt-2 text-red-500">
+              Debug: {course?.manifest ? 'Manifest existe' : 'No hay manifest'}
+            </p>
           </div>
         </div>
       </div>
@@ -42,7 +65,7 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
   }
 
   const renderNavigationItem = (item: Item, level: number = 0) => {
-    console.log(`Renderizando item: ${item.title} (nivel ${level})`);
+    console.log(`Renderizando item: ${item.title} (nivel ${level}, ID: ${item.identifier})`);
     
     const isSelected = currentItem?.identifier === item.identifier;
     const hasContent = !!item.identifierref;
@@ -76,6 +99,8 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
     );
   };
 
+  console.log('=== RENDERIZANDO INTERFAZ DE NAVEGACIÓN ===');
+
   return (
     <div className="w-80 bg-white border-r shadow-sm">
       <div className="p-4">
@@ -86,23 +111,29 @@ const CourseNavigation: React.FC<CourseNavigationProps> = ({
         <Separator className="mb-4" />
         
         <ScrollArea className="h-[calc(100vh-200px)]">
-          {course.manifest.organizations.map((org, orgIndex) => (
-            <div key={org.identifier} className="space-y-2 mb-6">
-              <h3 className="font-medium text-sm text-gray-700 uppercase tracking-wide">
-                {org.title}
-              </h3>
-              <div className="text-xs text-gray-500 mb-2">
-                {org.items.length} elemento(s)
-              </div>
-              {org.items.length === 0 ? (
-                <div className="text-sm text-gray-400 italic">
-                  No hay items en esta organización
+          {course.manifest.organizations.map((org, orgIndex) => {
+            console.log(`Renderizando organización ${orgIndex + 1}: ${org.title}`);
+            return (
+              <div key={org.identifier} className="space-y-2 mb-6">
+                <h3 className="font-medium text-sm text-gray-700 uppercase tracking-wide">
+                  {org.title}
+                </h3>
+                <div className="text-xs text-gray-500 mb-2">
+                  {org.items?.length || 0} elemento(s)
                 </div>
-              ) : (
-                org.items.map(item => renderNavigationItem(item))
-              )}
-            </div>
-          ))}
+                {!org.items || org.items.length === 0 ? (
+                  <div className="text-sm text-gray-400 italic">
+                    No hay items en esta organización
+                  </div>
+                ) : (
+                  org.items.map(item => {
+                    console.log('Mapeando item para render:', item);
+                    return renderNavigationItem(item);
+                  })
+                )}
+              </div>
+            );
+          })}
         </ScrollArea>
       </div>
     </div>
