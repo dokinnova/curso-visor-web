@@ -1,13 +1,11 @@
 
-import React, { useState, useEffect } from 'react';
-import { ArrowLeft, BookOpen, ChevronRight, Home, RotateCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { SCORMPackage, Item, Resource } from '@/types/scorm';
+import React, { useEffect } from 'react';
+import { SCORMPackage } from '@/types/scorm';
 import { setupSCORMAPI } from '@/utils/scormAPI';
-import SCORMContentRenderer from './SCORMContentRenderer';
+import { useCourseNavigation } from '@/hooks/useCourseNavigation';
+import CourseHeader from './CourseHeader';
+import CourseNavigation from './CourseNavigation';
+import ContentArea from './ContentArea';
 
 interface CourseViewerProps {
   course: SCORMPackage;
@@ -15,173 +13,43 @@ interface CourseViewerProps {
 }
 
 const CourseViewer: React.FC<CourseViewerProps> = ({ course, onBack }) => {
-  const [currentItem, setCurrentItem] = useState<Item | null>(null);
-  const [currentResource, setCurrentResource] = useState<Resource | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const {
+    currentItem,
+    currentResource,
+    refreshKey,
+    selectItem,
+    refreshContent
+  } = useCourseNavigation(course);
 
   useEffect(() => {
     // Configurar la API SCORM cuando se monta el componente
     setupSCORMAPI();
-    
-    // Debug: mostrar información del curso
-    console.log('SCORM Course loaded:');
-    console.log('- Title:', course.manifest.title);
-    console.log('- Organizations:', course.manifest.organizations.length);
-    console.log('- Resources:', course.manifest.resources.length);
-    console.log('- Files:', course.files.size);
-    
-    // Mostrar todos los archivos disponibles
-    console.log('Available files in SCORM package:');
-    course.files.forEach((file, path) => {
-      console.log(`  ${path} (${file.size} bytes, ${file.type})`);
-    });
-    
-    // Seleccionar el primer item automáticamente
-    if (course.manifest.organizations.length > 0) {
-      const firstOrg = course.manifest.organizations[0];
-      if (firstOrg.items.length > 0) {
-        selectItem(firstOrg.items[0]);
-      }
-    }
-  }, [course]);
-
-  const selectItem = (item: Item) => {
-    console.log('Selecting item:', item);
-    setCurrentItem(item);
-
-    if (item.identifierref) {
-      const resource = course.manifest.resources.find(r => r.identifier === item.identifierref);
-      if (resource) {
-        console.log('Found resource:', resource);
-        setCurrentResource(resource);
-      } else {
-        console.error('Resource not found for identifier:', item.identifierref);
-        setCurrentResource(null);
-      }
-    } else {
-      setCurrentResource(null);
-    }
-  };
-
-  const renderNavigationItem = (item: Item, level: number = 0) => {
-    const isSelected = currentItem?.identifier === item.identifier;
-    const hasContent = !!item.identifierref;
-
-    return (
-      <div key={item.identifier}>
-        <Button
-          variant={isSelected ? "default" : "ghost"}
-          className={`w-full justify-start text-left mb-1 ${
-            level > 0 ? `ml-${level * 4}` : ''
-          }`}
-          onClick={() => hasContent && selectItem(item)}
-          disabled={!hasContent}
-        >
-          <div className="flex items-center space-x-2 truncate">
-            {hasContent && <ChevronRight className="h-4 w-4 flex-shrink-0" />}
-            <span className="truncate">{item.title}</span>
-          </div>
-        </Button>
-        
-        {item.children && item.children.map(child => 
-          renderNavigationItem(child, level + 1)
-        )}
-      </div>
-    );
-  };
-
-  const refreshContent = () => {
-    setRefreshKey(prev => prev + 1);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Button variant="outline" onClick={onBack}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Volver
-              </Button>
-              <div className="flex items-center space-x-3">
-                <BookOpen className="h-6 w-6 text-blue-600" />
-                <div>
-                  <h1 className="text-xl font-bold">{course.manifest.title}</h1>
-                  {course.manifest.description && (
-                    <p className="text-sm text-gray-600">{course.manifest.description}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-            
-            {currentItem && currentResource && (
-              <div className="flex items-center space-x-2">
-                <Button variant="outline" size="sm" onClick={refreshContent}>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Recargar
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <CourseHeader
+        course={course}
+        currentItem={currentItem}
+        currentResource={currentResource}
+        onBack={onBack}
+        onRefresh={refreshContent}
+      />
 
       <div className="flex-1 flex">
-        {/* Sidebar Navigation */}
-        <div className="w-80 bg-white border-r shadow-sm">
-          <div className="p-4">
-            <h2 className="font-semibold text-lg mb-4 flex items-center">
-              <Home className="h-5 w-5 mr-2" />
-              Contenido del Curso
-            </h2>
-            <Separator className="mb-4" />
-            
-            <ScrollArea className="h-[calc(100vh-200px)]">
-              {course.manifest.organizations.map(org => (
-                <div key={org.identifier} className="space-y-2">
-                  <h3 className="font-medium text-sm text-gray-700 uppercase tracking-wide">
-                    {org.title}
-                  </h3>
-                  {org.items.map(item => renderNavigationItem(item))}
-                </div>
-              ))}
-            </ScrollArea>
-          </div>
-        </div>
+        <CourseNavigation
+          course={course}
+          currentItem={currentItem}
+          onSelectItem={selectItem}
+        />
 
-        {/* Content Area */}
         <div className="flex-1 p-6">
-          {currentItem && currentResource ? (
-            <Card className="h-full">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center space-x-2">
-                  <span>{currentItem.title}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 h-[calc(100%-80px)]">
-                <SCORMContentRenderer
-                  key={`${currentResource.identifier}-${refreshKey}`}
-                  resource={currentResource}
-                  scormPackage={course}
-                  title={currentItem.title}
-                />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="h-full flex items-center justify-center">
-              <CardContent className="text-center">
-                <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-gray-600 mb-2">
-                  Selecciona un elemento del curso
-                </h3>
-                <p className="text-gray-500">
-                  Usa la navegación de la izquierda para explorar el contenido del curso
-                </p>
-              </CardContent>
-            </Card>
-          )}
+          <ContentArea
+            currentItem={currentItem}
+            currentResource={currentResource}
+            scormPackage={course}
+            refreshKey={refreshKey}
+          />
         </div>
       </div>
     </div>
