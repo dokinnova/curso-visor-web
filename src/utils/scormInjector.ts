@@ -73,12 +73,74 @@ export function createSCORMAPI() {
 }
 
 export function injectSCORMIntoHTML(htmlContent: string): string {
-  const scormScript = `
-<script>
-// Inyectar API SCORM directamente en esta ventana
-window.API = ${JSON.stringify(createSCORMAPI()).replace(/"function\s*\([^)]*\)\s*:\s*string"\s*{\s*([^}]+)\s*}/g, 'function($1) { $2 }').replace(/\\"/g, '"')};
+  const scormScript = `<script>
+// Datos SCORM iniciales
+var scormData = {
+  'cmi.core.lesson_status': 'not attempted',
+  'cmi.core.student_id': 'student_001',
+  'cmi.core.student_name': 'Estudiante Demo',
+  'cmi.core.score.raw': '0',
+  'cmi.core.score.min': '0',
+  'cmi.core.score.max': '100',
+  'cmi.core.total_time': '00:00:00',
+  'cmi.core.lesson_location': '',
+  'cmi.core.exit': '',
+  'cmi.core.entry': 'ab-initio',
+  'cmi.suspend_data': ''
+};
 
-// También crear versión SCORM 2004
+// API SCORM 1.2
+window.API = {
+  LMSInitialize: function(parameter) {
+    console.log('SCORM API (Injected): LMSInitialize called with:', parameter);
+    return 'true';
+  },
+  LMSFinish: function(parameter) {
+    console.log('SCORM API (Injected): LMSFinish called with:', parameter);
+    return 'true';
+  },
+  LMSGetValue: function(element) {
+    console.log('SCORM API (Injected): LMSGetValue called for:', element);
+    var value = scormData[element] || '';
+    console.log('SCORM API (Injected): Returning value:', value);
+    return value;
+  },
+  LMSSetValue: function(element, value) {
+    console.log('SCORM API (Injected): LMSSetValue called for:', element, 'with value:', value);
+    scormData[element] = value;
+    
+    if (element === 'cmi.core.lesson_status') {
+      var validStatuses = ['passed', 'completed', 'failed', 'incomplete', 'browsed', 'not attempted'];
+      if (validStatuses.indexOf(value) === -1) {
+        console.warn('SCORM API (Injected): Invalid lesson status:', value);
+        return 'false';
+      }
+    }
+    
+    return 'true';
+  },
+  LMSCommit: function(parameter) {
+    console.log('SCORM API (Injected): LMSCommit called with:', parameter);
+    console.log('SCORM API (Injected): Current data:', scormData);
+    return 'true';
+  },
+  LMSGetLastError: function() {
+    return '0';
+  },
+  LMSGetErrorString: function(errorCode) {
+    var errorStrings = {
+      '0': 'No error',
+      '101': 'General exception',
+      '201': 'Invalid argument error'
+    };
+    return errorStrings[errorCode] || 'Unknown error';
+  },
+  LMSGetDiagnostic: function(errorCode) {
+    return 'Diagnostic information for error ' + errorCode;
+  }
+};
+
+// API SCORM 2004
 window.API_1484_11 = {
   Initialize: window.API.LMSInitialize,
   Terminate: window.API.LMSFinish,
@@ -91,8 +153,7 @@ window.API_1484_11 = {
 };
 
 console.log('SCORM API inyectada correctamente en el iframe');
-</script>
-`;
+</script>`;
 
   // Insertar el script justo después del tag <head> o antes del primer <script>
   if (htmlContent.includes('<head>')) {
