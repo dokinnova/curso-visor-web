@@ -1,3 +1,4 @@
+
 import JSZip from 'jszip';
 import { SCORMPackage, SCORMManifest, Organization, Item, Resource } from '@/types/scorm';
 
@@ -91,32 +92,25 @@ function parseManifest(xmlString: string): SCORMManifest {
   let description = undefined;
 
   // Buscar título en metadata/general/title
-  const metadataTitle = doc.querySelector('metadata general title langstring');
+  const metadataTitle = doc.querySelector('metadata general title langstring, metadata general title, title');
   if (metadataTitle) {
-    title = metadataTitle.textContent || title;
-    console.log('Título encontrado en metadata:', title);
-  } else {
-    // Buscar en otras ubicaciones
-    const titleElement = doc.querySelector('title');
-    if (titleElement) {
-      title = titleElement.textContent || title;
-      console.log('Título encontrado en elemento title:', title);
-    }
+    title = metadataTitle.textContent?.trim() || title;
+    console.log('Título encontrado:', title);
   }
 
   // Buscar descripción
-  const metadataDescription = doc.querySelector('metadata general description langstring');
+  const metadataDescription = doc.querySelector('metadata general description langstring, metadata general description');
   if (metadataDescription) {
-    description = metadataDescription.textContent;
+    description = metadataDescription.textContent?.trim();
     console.log('Descripción encontrada:', description);
   }
 
   console.log('TÍTULO FINAL:', title);
   console.log('DESCRIPCIÓN FINAL:', description);
 
-  // Parsear organizaciones
-  console.log('=== PARSEANDO ORGANIZACIONES - INICIO ===');
-  const organizations = parseOrganizations(doc);
+  // Parsear organizaciones con mejor detección
+  console.log('=== PARSEANDO ORGANIZACIONES - MEJORADO ===');
+  const organizations = parseOrganizationsImproved(doc);
   console.log('=== ORGANIZACIONES PARSEADAS ===');
   console.log('Número de organizaciones encontradas:', organizations.length);
   organizations.forEach((org, index) => {
@@ -126,6 +120,11 @@ function parseManifest(xmlString: string): SCORMManifest {
     console.log(`  - Items: ${org.items.length}`);
     org.items.forEach((item, itemIndex) => {
       console.log(`    Item ${itemIndex + 1}: ${item.title} (ID: ${item.identifier}, Ref: ${item.identifierref})`);
+      if (item.children && item.children.length > 0) {
+        item.children.forEach((child, childIndex) => {
+          console.log(`      Subitem ${childIndex + 1}: ${child.title} (ID: ${child.identifier}, Ref: ${child.identifierref})`);
+        });
+      }
     });
   });
   
@@ -157,8 +156,8 @@ function parseManifest(xmlString: string): SCORMManifest {
   return result;
 }
 
-function parseOrganizations(doc: Document): Organization[] {
-  console.log('=== PARSEANDO ORGANIZACIONES DETALLADO ===');
+function parseOrganizationsImproved(doc: Document): Organization[] {
+  console.log('=== PARSEANDO ORGANIZACIONES MEJORADO ===');
   
   const organizations: Organization[] = [];
   
@@ -170,15 +169,42 @@ function parseOrganizations(doc: Document): Organization[] {
   }
 
   console.log('Contenedor organizations encontrado');
+  console.log('Contenido HTML del contenedor:', organizationsContainer.innerHTML);
   
   // Buscar todos los elementos organization
   const orgElements = organizationsContainer.querySelectorAll('organization');
   console.log(`Encontrados ${orgElements.length} elementos organization`);
 
   if (orgElements.length === 0) {
-    console.warn('No se encontraron elementos organization dentro del contenedor');
-    // Mostrar el contenido del contenedor para debug
-    console.log('Contenido del contenedor organizations:', organizationsContainer.innerHTML);
+    console.warn('No se encontraron elementos organization, intentando estrategias alternativas...');
+    
+    // Estrategia alternativa: buscar directamente items en organizations
+    const directItems = organizationsContainer.querySelectorAll('item');
+    if (directItems.length > 0) {
+      console.log(`Encontrados ${directItems.length} items directos en organizations`);
+      
+      // Crear una organización por defecto con estos items
+      const defaultOrg: Organization = {
+        identifier: 'default-org',
+        title: 'Contenido del Curso',
+        items: []
+      };
+
+      directItems.forEach((itemElement, index) => {
+        const item = parseItemElement(itemElement, index);
+        if (item) {
+          defaultOrg.items.push(item);
+          console.log(`Item directo agregado: ${item.title}`);
+        }
+      });
+
+      if (defaultOrg.items.length > 0) {
+        organizations.push(defaultOrg);
+        console.log('Organización por defecto creada con items directos');
+      }
+    }
+    
+    return organizations;
   }
 
   orgElements.forEach((orgElement, index) => {
@@ -188,80 +214,119 @@ function parseOrganizations(doc: Document): Organization[] {
     console.log('Organization identifier:', identifier);
     
     // Buscar título de la organización
-    const titleElement = orgElement.querySelector('title');
-    const title = titleElement?.textContent || `Organización ${index + 1}`;
+    const titleElement = orgElement.querySelector(':scope > title');
+    const title = titleElement?.textContent?.trim() || `Organización ${index + 1}`;
     console.log('Organization title:', title);
 
     console.log('Contenido completo de la organización:', orgElement.innerHTML);
 
-    // Parsear items de esta organización
-    const items = parseItems(orgElement);
+    // Parsear items de esta organización con estrategia mejorada
+    const items = parseItemsImproved(orgElement);
     console.log(`Items parseados para esta organización: ${items.length}`);
 
-    organizations.push({
-      identifier,
-      title,
-      items
-    });
+    if (items.length > 0) {
+      organizations.push({
+        identifier,
+        title,
+        items
+      });
+    } else {
+      console.warn(`Organización ${title} no tiene items válidos`);
+    }
   });
 
   console.log('=== FIN PARSING ORGANIZACIONES ===');
   return organizations;
 }
 
-function parseItems(parent: Element): Item[] {
-  console.log('=== PARSEANDO ITEMS ===');
+function parseItemsImproved(parent: Element): Item[] {
+  console.log('=== PARSEANDO ITEMS MEJORADO ===');
   console.log('Elemento padre:', parent.tagName);
   
   const items: Item[] = [];
   
-  // Buscar items directos (no nested)
-  const itemElements = parent.querySelectorAll(':scope > item');
-  console.log(`Encontrados ${itemElements.length} items directos en ${parent.tagName}`);
+  // Estrategia 1: Buscar items directos
+  let itemElements = parent.querySelectorAll(':scope > item');
+  console.log(`Estrategia 1 - Items directos encontrados: ${itemElements.length}`);
+
+  // Estrategia 2: Si no hay items directos, buscar todos los items
+  if (itemElements.length === 0) {
+    itemElements = parent.querySelectorAll('item');
+    console.log(`Estrategia 2 - Items totales encontrados: ${itemElements.length}`);
+  }
+
+  // Estrategia 3: Filtrar items que no sean hijos de otros items
+  if (itemElements.length > 1) {
+    const topLevelItems: Element[] = [];
+    itemElements.forEach(item => {
+      // Verificar si este item no está dentro de otro item
+      const parentItem = item.parentElement?.closest('item');
+      if (!parentItem || parentItem === parent) {
+        topLevelItems.push(item);
+      }
+    });
+    
+    if (topLevelItems.length > 0 && topLevelItems.length < itemElements.length) {
+      console.log(`Estrategia 3 - Items de nivel superior: ${topLevelItems.length}`);
+      itemElements = topLevelItems as any;
+    }
+  }
 
   if (itemElements.length === 0) {
-    console.warn('No se encontraron items directos');
-    // Buscar items sin :scope como fallback
-    const allItems = parent.querySelectorAll('item');
-    console.log(`Fallback: encontrados ${allItems.length} items totales`);
-    
-    // Mostrar el contenido para debug
+    console.warn('No se encontraron items');
     console.log('Contenido del elemento padre:', parent.innerHTML);
+    return items;
   }
 
   itemElements.forEach((itemElement, index) => {
-    console.log(`--- Procesando item ${index + 1} ---`);
-    
-    const identifier = itemElement.getAttribute('identifier') || `item-${index}`;
-    const identifierref = itemElement.getAttribute('identifierref') || undefined;
-    
-    console.log('Item identifier:', identifier);
-    console.log('Item identifierref:', identifierref);
-    
-    // Buscar título del item
-    const titleElement = itemElement.querySelector(':scope > title');
-    const title = titleElement?.textContent || `Item ${index + 1}`;
-    console.log('Item title:', title);
-
-    // Buscar items hijos
-    const children = parseItems(itemElement);
-    if (children.length > 0) {
-      console.log(`Item tiene ${children.length} sub-items`);
+    const item = parseItemElement(itemElement, index);
+    if (item) {
+      items.push(item);
     }
-
-    const item = {
-      identifier,
-      title,
-      identifierref,
-      children: children.length > 0 ? children : undefined
-    };
-
-    console.log('Item completo:', item);
-    items.push(item);
   });
 
-  console.log('=== FIN PARSING ITEMS ===');
+  console.log('=== FIN PARSING ITEMS MEJORADO ===');
   return items;
+}
+
+function parseItemElement(itemElement: Element, index: number): Item | null {
+  console.log(`--- Procesando item ${index + 1} ---`);
+  
+  const identifier = itemElement.getAttribute('identifier') || `item-${index}`;
+  const identifierref = itemElement.getAttribute('identifierref') || undefined;
+  
+  console.log('Item identifier:', identifier);
+  console.log('Item identifierref:', identifierref);
+  
+  // Buscar título del item con múltiples estrategias
+  let title = '';
+  const titleElement = itemElement.querySelector(':scope > title');
+  if (titleElement) {
+    title = titleElement.textContent?.trim() || '';
+  }
+  
+  // Si no hay título, intentar obtenerlo del atributo o usar el identifier
+  if (!title) {
+    title = itemElement.getAttribute('title') || identifier;
+  }
+  
+  console.log('Item title:', title);
+
+  // Buscar items hijos
+  const children = parseItemsImproved(itemElement);
+  if (children.length > 0) {
+    console.log(`Item tiene ${children.length} sub-items`);
+  }
+
+  const item: Item = {
+    identifier,
+    title,
+    identifierref,
+    children: children.length > 0 ? children : undefined
+  };
+
+  console.log('Item completo:', item);
+  return item;
 }
 
 function parseResources(doc: Document): Resource[] {
