@@ -108,7 +108,6 @@ console.log('SCORM API inyectada correctamente en el iframe');
     }
   }
 }
-</script>
 
 export function createModifiedBlob(originalFile: File): Promise<File> {
   return new Promise((resolve, reject) => {
