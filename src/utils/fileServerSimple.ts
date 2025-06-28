@@ -22,11 +22,8 @@ export class SimpleFileServer {
     console.log(`Generated blob URL: "${url}"`);
     
     // Validar que la URL es válida
-    try {
-      new URL(url);
-      console.log(`✓ Blob URL is valid`);
-    } catch (e) {
-      console.error(`✗ Generated invalid blob URL: ${url}`, e);
+    if (!this.isValidBlobUrl(url)) {
+      console.error(`✗ Generated invalid blob URL: ${url}`);
       throw new Error(`Failed to create valid blob URL for ${path}`);
     }
     
@@ -39,7 +36,7 @@ export class SimpleFileServer {
     this.files.set(normalizedPath, servedFile);
     this.urlToPath.set(url, normalizedPath);
 
-    console.log(`SimpleFileServer: Successfully added ${normalizedPath} -> ${url}`);
+    console.log(`✓ Successfully added ${normalizedPath} -> ${url}`);
     return url;
   }
 
@@ -50,36 +47,45 @@ export class SimpleFileServer {
     const normalizedPath = this.normalizePath(path);
     console.log(`Normalized path: "${normalizedPath}"`);
     
-    // Buscar archivo exacto
+    // Estrategia 1: Buscar archivo exacto
     const file = this.files.get(normalizedPath);
-    if (file) {
+    if (file && this.isValidBlobUrl(file.url)) {
       console.log(`✓ Found exact match for "${normalizedPath}" -> ${file.url}`);
       return file.url;
     }
 
-    // Buscar por nombre de archivo
+    // Estrategia 2: Buscar por nombre de archivo
     const fileName = normalizedPath.split('/').pop()?.toLowerCase();
     console.log(`Searching by filename: "${fileName}"`);
     
     if (fileName) {
       for (const [filePath, file] of this.files) {
         const currentFileName = filePath.split('/').pop()?.toLowerCase();
-        if (currentFileName === fileName) {
+        if (currentFileName === fileName && this.isValidBlobUrl(file.url)) {
           console.log(`✓ Found by filename "${fileName}" at ${filePath} -> ${file.url}`);
           return file.url;
         }
       }
     }
 
-    // Buscar variaciones comunes
+    // Estrategia 3: Buscar variaciones comunes
     console.log(`Searching variations for: "${normalizedPath}"`);
     const variations = this.generatePathVariations(normalizedPath);
     console.log(`Generated variations:`, variations);
     
     for (const variation of variations) {
       const file = this.files.get(variation);
-      if (file) {
+      if (file && this.isValidBlobUrl(file.url)) {
         console.log(`✓ Found variation "${variation}" for "${normalizedPath}" -> ${file.url}`);
+        return file.url;
+      }
+    }
+
+    // Estrategia 4: Búsqueda fuzzy por contenido de ruta
+    console.log(`Trying fuzzy search for: "${normalizedPath}"`);
+    for (const [filePath, file] of this.files) {
+      if (filePath.includes(fileName || '') && this.isValidBlobUrl(file.url)) {
+        console.log(`✓ Found fuzzy match "${filePath}" for "${normalizedPath}" -> ${file.url}`);
         return file.url;
       }
     }
@@ -110,23 +116,32 @@ export class SimpleFileServer {
     for (const entryFile of entryFiles) {
       console.log(`Checking for entry file: ${entryFile}`);
       const url = this.getFileUrl(entryFile);
-      if (url) {
+      if (url && this.isValidBlobUrl(url)) {
         console.log(`✓ Found entry file ${entryFile} -> ${url}`);
         return url;
       }
     }
 
-    // Si no encuentra ninguno, buscar cualquier archivo HTML
-    console.log(`No standard entry files found, searching for any HTML file`);
+    // Si no encuentra ninguno, buscar cualquier archivo HTML válido
+    console.log(`No standard entry files found, searching for any valid HTML file`);
     for (const [path, file] of this.files) {
-      if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
+      if ((path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) && this.isValidBlobUrl(file.url)) {
         console.log(`✓ Using HTML file ${path} -> ${file.url}`);
         return file.url;
       }
     }
 
-    console.warn(`✗ No HTML files found`);
+    console.warn(`✗ No valid HTML files found`);
     return null;
+  }
+
+  private isValidBlobUrl(url: string): boolean {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.protocol === 'blob:' && urlObj.href.length > 'blob:'.length;
+    } catch (e) {
+      return false;
+    }
   }
 
   private generatePathVariations(path: string): string[] {
@@ -142,11 +157,15 @@ export class SimpleFileServer {
       variations.push(path.substring(2));
     }
     
-    // Variaciones con extensiones
+    // Variaciones con extensiones si no las tiene
     if (!path.toLowerCase().endsWith('.html') && !path.toLowerCase().endsWith('.htm')) {
       variations.push(path + '.html');
       variations.push(path + '.htm');
     }
+    
+    // Variaciones con diferentes formatos de separador
+    variations.push(path.replace(/\\/g, '/'));
+    variations.push(path.replace(/\//g, '\\'));
     
     return variations;
   }
@@ -155,7 +174,8 @@ export class SimpleFileServer {
     const normalized = path
       .replace(/\\/g, '/')
       .replace(/^\/+/, '')
-      .replace(/\/+/g, '/');
+      .replace(/\/+/g, '/')
+      .trim();
     
     console.log(`Normalized path "${path}" -> "${normalized}"`);
     return normalized;
@@ -165,8 +185,13 @@ export class SimpleFileServer {
     console.log(`===== CLEARING FILE SERVER =====`);
     console.log(`Clearing ${this.files.size} files`);
     
+    // Revocar todas las URLs blob para liberar memoria
     for (const file of this.files.values()) {
-      URL.revokeObjectURL(file.url);
+      try {
+        URL.revokeObjectURL(file.url);
+      } catch (e) {
+        console.warn(`Could not revoke URL: ${file.url}`, e);
+      }
     }
     this.files.clear();
     this.urlToPath.clear();
@@ -174,10 +199,11 @@ export class SimpleFileServer {
     console.log(`File server cleared`);
   }
 
-  getAllFiles(): Array<{ path: string; url: string }> {
+  getAllFiles(): Array<{ path: string; url: string; valid: boolean }> {
     return Array.from(this.files.entries()).map(([path, file]) => ({
       path,
-      url: file.url
+      url: file.url,
+      valid: this.isValidBlobUrl(file.url)
     }));
   }
 }
