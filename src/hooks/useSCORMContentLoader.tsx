@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { SCORMPackage, Resource } from '@/types/scorm';
 import { SimpleFileServer } from '@/utils/fileServerSimple';
@@ -8,7 +7,7 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
   const [contentUrl, setContentUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  the fileServerRef = useRef<SimpleFileServer | null>(null);
+  const fileServerRef = useRef<SimpleFileServer | null>(null);
 
   useEffect(() => {
     loadContent();
