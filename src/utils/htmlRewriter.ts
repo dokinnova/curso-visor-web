@@ -12,84 +12,69 @@ function cleanUrl(url: string): string {
   return url.split('?')[0].split('#')[0];
 }
 
-function resolvePath(relativePath: string, basePath: string): string {
-  console.log(`[HTMLRewriter] Resolving path: "${relativePath}" from base: "${basePath}"`);
-  
-  if (relativePath.startsWith('/')) {
-    return relativePath.substring(1);
-  }
-  
-  if (!relativePath.includes('/')) {
-    return relativePath;
-  }
-  
-  const baseDir = basePath.includes('/') ? basePath.substring(0, basePath.lastIndexOf('/')) : '';
-  const pathParts = relativePath.split('/').filter(part => part !== '');
-  const baseParts = baseDir ? baseDir.split('/').filter(part => part !== '') : [];
-  
-  const resolvedParts = [...baseParts];
-  
-  for (const part of pathParts) {
-    if (part === '..') {
-      resolvedParts.pop();
-    } else if (part !== '.') {
-      resolvedParts.push(part);
-    }
-  }
-  
-  const resolved = resolvedParts.join('/');
-  console.log(`[HTMLRewriter] Resolved to: "${resolved}"`);
-  return resolved;
-}
-
 export function rewriteHtmlContent(htmlContent: string, context: RewriteContext): string {
-  console.log('[HTMLRewriter] Starting HTML rewrite');
+  console.log('[HTMLRewriter] Starting simplified HTML rewrite');
   
   if (!htmlContent || htmlContent.trim().length === 0) {
     console.error('[HTMLRewriter] Empty HTML content received');
     return htmlContent;
   }
 
+  // En lugar de reescribir URLs, solo inyectar el API SCORM
   let modifiedHtml = htmlContent;
-  let replacements = 0;
   
-  const patterns = [
-    { regex: /(\bhref\s*=\s*["'])([^"']+)(["'])/gi, type: 'href' },
-    { regex: /(\bsrc\s*=\s*["'])([^"']+)(["'])/gi, type: 'src' }
-  ];
-
-  for (const pattern of patterns) {
-    const matches = [...modifiedHtml.matchAll(pattern.regex)];
-    console.log(`[HTMLRewriter] Found ${matches.length} ${pattern.type} attributes`);
-    
-    for (const match of matches) {
-      const fullMatch = match[0];
-      const prefix = match[1];
-      const originalUrl = match[2];
-      const suffix = match[3];
+  // Inyectar SCORM API en el head
+  const scormApiScript = `
+    <script>
+      // SCORM 1.2 API Mock
+      window.API = {
+        LMSInitialize: function(param) {
+          console.log('SCORM: LMSInitialize called with', param);
+          return 'true';
+        },
+        LMSFinish: function(param) {
+          console.log('SCORM: LMSFinish called with', param);
+          return 'true';
+        },
+        LMSGetValue: function(element) {
+          console.log('SCORM: LMSGetValue called with', element);
+          return '';
+        },
+        LMSSetValue: function(element, value) {
+          console.log('SCORM: LMSSetValue called with', element, value);
+          return 'true';
+        },
+        LMSCommit: function(param) {
+          console.log('SCORM: LMSCommit called with', param);
+          return 'true';
+        },
+        LMSGetLastError: function() {
+          return '0';
+        },
+        LMSGetErrorString: function(errorCode) {
+          return 'No error';
+        },
+        LMSGetDiagnostic: function(errorCode) {
+          return 'No error';
+        }
+      };
       
-      if (isSpecialUrl(originalUrl)) {
-        console.log(`[HTMLRewriter] Skipping special URL: ${originalUrl}`);
-        continue;
-      }
-
-      const cleanedUrl = cleanUrl(originalUrl);
-      const resolvedPath = resolvePath(cleanedUrl, context.basePath);
+      // También para SCORM 2004
+      window.API_1484_11 = window.API;
       
-      console.log(`[HTMLRewriter] Resolving: "${originalUrl}" -> "${resolvedPath}"`);
-      
-      const blobUrl = context.getFileUrl(resolvedPath);
-      if (blobUrl) {
-        const newAttribute = `${prefix}${blobUrl}${suffix}`;
-        modifiedHtml = modifiedHtml.replace(fullMatch, newAttribute);
-        replacements++;
-        console.log(`[HTMLRewriter] ✓ Replaced: ${originalUrl} -> blob URL`);
-      } else {
-        console.log(`[HTMLRewriter] ✗ No blob URL found for: ${resolvedPath}`);
-      }
-    }
+      console.log('SCORM API injected successfully');
+    </script>
+  `;
+  
+  // Insertar el script antes del cierre del head o al inicio del body
+  if (modifiedHtml.includes('</head>')) {
+    modifiedHtml = modifiedHtml.replace('</head>', scormApiScript + '</head>');
+  } else if (modifiedHtml.includes('<body>')) {
+    modifiedHtml = modifiedHtml.replace('<body>', '<body>' + scormApiScript);
+  } else {
+    modifiedHtml = scormApiScript + modifiedHtml;
   }
-
-  console.log(`[HTMLRewriter] Completed: ${replacements} replacements made`);
+  
+  console.log('[HTMLRewriter] SCORM API injected successfully');
   return modifiedHtml;
 }
