@@ -5,204 +5,100 @@ export interface RewriteContext {
 }
 
 export function rewriteHtmlContent(htmlContent: string, context: RewriteContext): string {
-  console.log('===== HTML REWRITER START =====');
-  console.log('Base path:', context.basePath);
-  console.log('Original HTML length:', htmlContent.length);
+  console.log('[HTMLRewriter] Starting HTML rewrite');
+  console.log('[HTMLRewriter] Original HTML length:', htmlContent.length);
   
+  if (!htmlContent || htmlContent.trim().length === 0) {
+    console.error('[HTMLRewriter] Empty HTML content received');
+    return htmlContent;
+  }
+
   let modifiedHtml = htmlContent;
+  let replacements = 0;
   
-  // Patrones mejorados para encontrar referencias a recursos
+  // Patrones para encontrar recursos
   const patterns = [
-    { regex: /(\bhref\s*=\s*["'])([^"']+)(["'])/gi, type: 'href', group: 2 },
-    { regex: /(\bsrc\s*=\s*["'])([^"']+)(["'])/gi, type: 'src', group: 2 },
-    { regex: /(\baction\s*=\s*["'])([^"']+)(["'])/gi, type: 'action', group: 2 },
-    { regex: /(\bbackground\s*=\s*["'])([^"']+)(["'])/gi, type: 'background', group: 2 }
+    { regex: /(\bhref\s*=\s*["'])([^"']+)(["'])/gi, type: 'href' },
+    { regex: /(\bsrc\s*=\s*["'])([^"']+)(["'])/gi, type: 'src' }
   ];
 
-  let totalReplacements = 0;
-  const replacementLog: Array<{type: string, original: string, resolved: string, blobUrl: string | null, success: boolean}> = [];
-
-  patterns.forEach(pattern => {
-    const replacements: Array<{ from: string; to: string }> = [];
-    let match;
+  for (const pattern of patterns) {
+    const matches = [...modifiedHtml.matchAll(pattern.regex)];
+    console.log(`[HTMLRewriter] Found ${matches.length} ${pattern.type} attributes`);
     
-    // Reset regex index
-    pattern.regex.lastIndex = 0;
-    
-    // Crear una copia del HTML original para esta iteración
-    const htmlForPattern = modifiedHtml;
-    
-    while ((match = pattern.regex.exec(htmlForPattern)) !== null) {
+    for (const match of matches) {
       const fullMatch = match[0];
       const prefix = match[1];
-      const originalUrl = match[pattern.group];
+      const originalUrl = match[2];
       const suffix = match[3];
       
-      console.log(`===== PROCESSING ${pattern.type.toUpperCase()}: "${originalUrl}" =====`);
-      
-      // Skip si es una URL absoluta, data URL, o fragmento
-      if (isAbsoluteUrl(originalUrl) || originalUrl.startsWith('data:') || originalUrl.startsWith('#') || originalUrl.startsWith('mailto:') || originalUrl.startsWith('tel:')) {
-        console.log(`Skipping special URL: ${originalUrl}`);
+      // Skip URLs absolutos y especiales
+      if (this.isSpecialUrl(originalUrl)) {
+        console.log(`[HTMLRewriter] Skipping special URL: ${originalUrl}`);
         continue;
       }
 
-      // Limpiar la URL de parámetros y fragmentos para resolución
-      const cleanUrl = cleanUrlPath(originalUrl);
-      console.log(`Cleaned URL: "${cleanUrl}"`);
-
-      // Resolver la ruta relativa de manera más robusta
-      const resolvedPath = resolveRelativePath(cleanUrl, context.basePath);
-      console.log(`Resolved path: "${resolvedPath}"`);
+      // Limpiar URL y resolver
+      const cleanUrl = this.cleanUrl(originalUrl);
+      const resolvedPath = this.resolvePath(cleanUrl, context.basePath);
+      
+      console.log(`[HTMLRewriter] Resolving: "${originalUrl}" -> "${resolvedPath}"`);
       
       const blobUrl = context.getFileUrl(resolvedPath);
-      console.log(`Blob URL result: ${blobUrl || 'NOT FOUND'}`);
-      
-      let success = false;
-      
-      if (blobUrl && isValidBlobUrl(blobUrl)) {
-        // Preservar parámetros y fragmentos originales si los había
-        const finalUrl = preserveUrlParameters(originalUrl, blobUrl);
-        const newAttribute = `${prefix}${finalUrl}${suffix}`;
-        
-        replacements.push({
-          from: fullMatch,
-          to: newAttribute
-        });
-        
-        totalReplacements++;
-        success = true;
-        console.log(`✓ Will replace: "${fullMatch}" -> "${newAttribute}"`);
+      if (blobUrl) {
+        const newAttribute = `${prefix}${blobUrl}${suffix}`;
+        modifiedHtml = modifiedHtml.replace(fullMatch, newAttribute);
+        replacements++;
+        console.log(`[HTMLRewriter] ✓ Replaced: ${originalUrl} -> blob URL`);
       } else {
-        console.warn(`✗ Could not resolve or invalid blob URL for: "${originalUrl}"`);
+        console.log(`[HTMLRewriter] ✗ No blob URL found for: ${resolvedPath}`);
       }
-      
-      replacementLog.push({
-        type: pattern.type,
-        original: originalUrl,
-        resolved: resolvedPath,
-        blobUrl: blobUrl,
-        success: success
-      });
     }
-
-    // Aplicar todos los reemplazos para este patrón
-    replacements.forEach(replacement => {
-      modifiedHtml = modifiedHtml.replace(replacement.from, replacement.to);
-    });
-  });
-
-  console.log('===== HTML REWRITER SUMMARY =====');
-  console.log(`Total replacements made: ${totalReplacements}`);
-  console.log('Replacement log:', replacementLog);
-  console.log('Modified HTML length:', modifiedHtml.length);
-  
-  // Verificar que el HTML modificado es válido
-  if (modifiedHtml.length === 0) {
-    console.error('ERROR: Modified HTML is empty!');
-    return htmlContent; // Devolver original si hay error
   }
-  
-  console.log('===== HTML REWRITER END =====');
+
+  console.log(`[HTMLRewriter] Completed: ${replacements} replacements made`);
+  console.log('[HTMLRewriter] Modified HTML length:', modifiedHtml.length);
   
   return modifiedHtml;
 }
 
-function isAbsoluteUrl(url: string): boolean {
-  const isAbsolute = /^https?:\/\//.test(url) || url.startsWith('//') || url.startsWith('blob:') || url.startsWith('file:');
-  console.log(`URL "${url}" is absolute: ${isAbsolute}`);
-  return isAbsolute;
+function isSpecialUrl(url: string): boolean {
+  return /^(https?:\/\/|\/\/|data:|#|mailto:|tel:|blob:)/.test(url);
 }
 
-function cleanUrlPath(url: string): string {
-  // Quitar parámetros de consulta y fragmentos para resolución de archivo
-  const cleaned = url.split('?')[0].split('#')[0];
-  console.log(`Cleaned "${url}" -> "${cleaned}"`);
-  return cleaned;
+function cleanUrl(url: string): string {
+  return url.split('?')[0].split('#')[0];
 }
 
-function preserveUrlParameters(originalUrl: string, blobUrl: string): string {
-  // Extraer parámetros y fragmentos del URL original
-  const queryIndex = originalUrl.indexOf('?');
-  const hashIndex = originalUrl.indexOf('#');
+function resolvePath(relativePath: string, basePath: string): string {
+  console.log(`[HTMLRewriter] Resolving path: "${relativePath}" from base: "${basePath}"`);
   
-  let params = '';
-  if (queryIndex !== -1) {
-    if (hashIndex !== -1 && hashIndex > queryIndex) {
-      params = originalUrl.substring(queryIndex, hashIndex);
-    } else {
-      params = originalUrl.substring(queryIndex);
-    }
-  }
-  
-  let fragment = '';
-  if (hashIndex !== -1) {
-    fragment = originalUrl.substring(hashIndex);
-  }
-  
-  const finalUrl = blobUrl + params + fragment;
-  console.log(`Preserved parameters: "${originalUrl}" -> "${finalUrl}"`);
-  return finalUrl;
-}
-
-function isValidBlobUrl(url: string): boolean {
-  try {
-    const urlObj = new URL(url);
-    const isValid = urlObj.protocol === 'blob:' && urlObj.href.length > 'blob:'.length;
-    console.log(`Blob URL "${url}" is valid: ${isValid}`);
-    return isValid;
-  } catch (e) {
-    console.error(`Invalid blob URL: "${url}"`, e);
-    return false;
-  }
-}
-
-function resolveRelativePath(relativePath: string, basePath: string): string {
-  console.log(`===== RESOLVING RELATIVE PATH =====`);
-  console.log(`Relative path: "${relativePath}"`);
-  console.log(`Base path: "${basePath}"`);
-  
-  // Si la ruta relativa es absoluta (empieza con /), devolverla sin el /
+  // Si es ruta absoluta, quitar el /
   if (relativePath.startsWith('/')) {
-    const resolved = relativePath.substring(1);
-    console.log(`Absolute path resolved: "${resolved}"`);
-    return resolved;
+    return relativePath.substring(1);
   }
   
-  // Si la ruta es solo un nombre de archivo, intentar encontrarlo
+  // Si es solo nombre de archivo, devolverlo tal como está
   if (!relativePath.includes('/')) {
-    console.log(`Simple filename, returning as is: "${relativePath}"`);
     return relativePath;
   }
   
-  // Obtener el directorio base del archivo base
+  // Para rutas relativas complejas, intentar resolverlas
   const baseDir = basePath.includes('/') ? basePath.substring(0, basePath.lastIndexOf('/')) : '';
-  console.log(`Base directory: "${baseDir}"`);
-  
-  // Dividir la ruta relativa en partes
   const pathParts = relativePath.split('/').filter(part => part !== '');
   const baseParts = baseDir ? baseDir.split('/').filter(part => part !== '') : [];
   
-  console.log(`Path parts:`, pathParts);
-  console.log(`Base parts:`, baseParts);
-  
-  // Resolver paso a paso
   const resolvedParts = [...baseParts];
   
   for (const part of pathParts) {
     if (part === '..') {
-      if (resolvedParts.length > 0) {
-        resolvedParts.pop();
-        console.log(`Going up directory, parts now:`, resolvedParts);
-      } else {
-        console.warn(`Cannot go up from root directory`);
-      }
+      resolvedParts.pop();
     } else if (part !== '.') {
       resolvedParts.push(part);
-      console.log(`Adding part "${part}", parts now:`, resolvedParts);
     }
   }
   
   const resolved = resolvedParts.join('/');
-  console.log(`Final resolved path: "${resolved}"`);
+  console.log(`[HTMLRewriter] Resolved to: "${resolved}"`);
   return resolved;
 }
