@@ -1,4 +1,3 @@
-
 interface ServedFile {
   blob: Blob;
   url: string;
@@ -32,9 +31,12 @@ export class SimpleFileServer {
   getFileUrl(path: string): string | null {
     const normalizedPath = this.normalizePath(path);
     
+    console.log(`SimpleFileServer: Looking for "${normalizedPath}"`);
+    
     // Buscar archivo exacto
     const file = this.files.get(normalizedPath);
     if (file) {
+      console.log(`SimpleFileServer: Found exact match for "${normalizedPath}"`);
       return file.url;
     }
 
@@ -50,6 +52,17 @@ export class SimpleFileServer {
       }
     }
 
+    // Buscar variaciones comunes
+    const variations = this.generatePathVariations(normalizedPath);
+    for (const variation of variations) {
+      const file = this.files.get(variation);
+      if (file) {
+        console.log(`SimpleFileServer: Found variation "${variation}" for "${normalizedPath}"`);
+        return file.url;
+      }
+    }
+
+    console.warn(`SimpleFileServer: Could not find "${normalizedPath}"`);
     return null;
   }
 
@@ -86,6 +99,28 @@ export class SimpleFileServer {
     }
 
     return null;
+  }
+
+  private generatePathVariations(path: string): string[] {
+    const variations: string[] = [];
+    
+    // Variación con "./" al inicio
+    if (!path.startsWith('./')) {
+      variations.push('./' + path);
+    }
+    
+    // Variación sin "./"
+    if (path.startsWith('./')) {
+      variations.push(path.substring(2));
+    }
+    
+    // Variaciones con extensiones
+    if (!path.toLowerCase().endsWith('.html') && !path.toLowerCase().endsWith('.htm')) {
+      variations.push(path + '.html');
+      variations.push(path + '.htm');
+    }
+    
+    return variations;
   }
 
   private normalizePath(path: string): string {
