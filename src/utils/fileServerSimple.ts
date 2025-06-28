@@ -1,3 +1,4 @@
+
 interface ServedFile {
   blob: Blob;
   url: string;
@@ -9,11 +10,25 @@ export class SimpleFileServer {
   private urlToPath: Map<string, string> = new Map();
 
   addFile(path: string, file: File): string {
+    console.log(`===== ADDING FILE TO SERVER =====`);
+    console.log(`Original path: "${path}"`);
+    
     // Normalizar la ruta
     const normalizedPath = this.normalizePath(path);
+    console.log(`Normalized path: "${normalizedPath}"`);
     
     // Crear URL del blob
     const url = URL.createObjectURL(file);
+    console.log(`Generated blob URL: "${url}"`);
+    
+    // Validar que la URL es válida
+    try {
+      new URL(url);
+      console.log(`✓ Blob URL is valid`);
+    } catch (e) {
+      console.error(`✗ Generated invalid blob URL: ${url}`, e);
+      throw new Error(`Failed to create valid blob URL for ${path}`);
+    }
     
     const servedFile: ServedFile = {
       blob: file,
@@ -24,49 +39,59 @@ export class SimpleFileServer {
     this.files.set(normalizedPath, servedFile);
     this.urlToPath.set(url, normalizedPath);
 
-    console.log(`SimpleFileServer: Added ${normalizedPath} -> ${url}`);
+    console.log(`SimpleFileServer: Successfully added ${normalizedPath} -> ${url}`);
     return url;
   }
 
   getFileUrl(path: string): string | null {
-    const normalizedPath = this.normalizePath(path);
+    console.log(`===== GETTING FILE URL =====`);
+    console.log(`Requested path: "${path}"`);
     
-    console.log(`SimpleFileServer: Looking for "${normalizedPath}"`);
+    const normalizedPath = this.normalizePath(path);
+    console.log(`Normalized path: "${normalizedPath}"`);
     
     // Buscar archivo exacto
     const file = this.files.get(normalizedPath);
     if (file) {
-      console.log(`SimpleFileServer: Found exact match for "${normalizedPath}"`);
+      console.log(`✓ Found exact match for "${normalizedPath}" -> ${file.url}`);
       return file.url;
     }
 
     // Buscar por nombre de archivo
     const fileName = normalizedPath.split('/').pop()?.toLowerCase();
+    console.log(`Searching by filename: "${fileName}"`);
+    
     if (fileName) {
       for (const [filePath, file] of this.files) {
         const currentFileName = filePath.split('/').pop()?.toLowerCase();
         if (currentFileName === fileName) {
-          console.log(`SimpleFileServer: Found ${fileName} at ${filePath}`);
+          console.log(`✓ Found by filename "${fileName}" at ${filePath} -> ${file.url}`);
           return file.url;
         }
       }
     }
 
     // Buscar variaciones comunes
+    console.log(`Searching variations for: "${normalizedPath}"`);
     const variations = this.generatePathVariations(normalizedPath);
+    console.log(`Generated variations:`, variations);
+    
     for (const variation of variations) {
       const file = this.files.get(variation);
       if (file) {
-        console.log(`SimpleFileServer: Found variation "${variation}" for "${normalizedPath}"`);
+        console.log(`✓ Found variation "${variation}" for "${normalizedPath}" -> ${file.url}`);
         return file.url;
       }
     }
 
-    console.warn(`SimpleFileServer: Could not find "${normalizedPath}"`);
+    console.warn(`✗ Could not find file for path "${normalizedPath}"`);
+    console.log(`Available files:`, Array.from(this.files.keys()));
     return null;
   }
 
   findMainFile(): string | null {
+    console.log(`===== FINDING MAIN FILE =====`);
+    
     // Lista de archivos de entrada comunes en orden de prioridad
     const entryFiles = [
       'index.html',
@@ -83,21 +108,24 @@ export class SimpleFileServer {
 
     // Buscar archivos de entrada comunes
     for (const entryFile of entryFiles) {
+      console.log(`Checking for entry file: ${entryFile}`);
       const url = this.getFileUrl(entryFile);
       if (url) {
-        console.log(`SimpleFileServer: Found entry file ${entryFile}`);
+        console.log(`✓ Found entry file ${entryFile} -> ${url}`);
         return url;
       }
     }
 
     // Si no encuentra ninguno, buscar cualquier archivo HTML
+    console.log(`No standard entry files found, searching for any HTML file`);
     for (const [path, file] of this.files) {
       if (path.toLowerCase().endsWith('.html') || path.toLowerCase().endsWith('.htm')) {
-        console.log(`SimpleFileServer: Using HTML file ${path}`);
+        console.log(`✓ Using HTML file ${path} -> ${file.url}`);
         return file.url;
       }
     }
 
+    console.warn(`✗ No HTML files found`);
     return null;
   }
 
@@ -124,18 +152,26 @@ export class SimpleFileServer {
   }
 
   private normalizePath(path: string): string {
-    return path
+    const normalized = path
       .replace(/\\/g, '/')
       .replace(/^\/+/, '')
       .replace(/\/+/g, '/');
+    
+    console.log(`Normalized path "${path}" -> "${normalized}"`);
+    return normalized;
   }
 
   clear(): void {
+    console.log(`===== CLEARING FILE SERVER =====`);
+    console.log(`Clearing ${this.files.size} files`);
+    
     for (const file of this.files.values()) {
       URL.revokeObjectURL(file.url);
     }
     this.files.clear();
     this.urlToPath.clear();
+    
+    console.log(`File server cleared`);
   }
 
   getAllFiles(): Array<{ path: string; url: string }> {
