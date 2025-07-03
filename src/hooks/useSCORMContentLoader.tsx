@@ -1,53 +1,38 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { SCORMPackage, Resource } from '@/types/scorm';
-import { SimpleFileServer } from '@/utils/fileServerSimple';
-import { rewriteHtmlContent } from '@/utils/htmlRewriter';
 
 export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPackage) => {
   const [contentUrl, setContentUrl] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
-  const fileServerRef = useRef<SimpleFileServer | null>(null);
 
   useEffect(() => {
     loadContent();
-    
-    // Cleanup function
-    return () => {
-      if (fileServerRef.current) {
-        fileServerRef.current.clear();
-      }
-      if (contentUrl) {
-        URL.revokeObjectURL(contentUrl);
-      }
-    };
   }, [resource, scormPackage]);
 
   const loadContent = async () => {
-    console.log('[SCORM Loader] Creating comprehensive file server');
+    console.log('[SCORM Loader] STARTING - Simple approach');
+    console.log('[SCORM Loader] Resource:', resource);
+    console.log('[SCORM Loader] Package files count:', scormPackage.files.size);
+    
     setIsLoading(true);
     setError('');
     setContentUrl('');
     
     try {
-      // Limpiar servidor anterior si existe
-      if (fileServerRef.current) {
-        fileServerRef.current.clear();
-      }
+      // Crear un Map para almacenar las URLs de todos los archivos
+      const fileUrls = new Map<string, string>();
       
-      // Crear nuevo servidor de archivos
-      const fileServer = new SimpleFileServer();
-      fileServerRef.current = fileServer;
-      
-      // Agregar TODOS los archivos al servidor con URLs blob
+      // Crear URLs blob para todos los archivos
       console.log('[SCORM Loader] Creating blob URLs for all files...');
       for (const [path, file] of scormPackage.files.entries()) {
-        fileServer.addFile(path, file);
-        console.log(`[SCORM Loader] Added: ${path}`);
+        const blobUrl = URL.createObjectURL(file);
+        fileUrls.set(path, blobUrl);
+        console.log(`[SCORM Loader] Created blob for: ${path} -> ${blobUrl}`);
       }
       
-      // Buscar el archivo HTML principal
+      // Buscar archivo HTML principal
       let htmlFile: File | undefined;
       let htmlPath = '';
 
@@ -73,35 +58,64 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
         throw new Error('No se encontró archivo HTML principal');
       }
 
-      console.log(`[SCORM Loader] Processing HTML file: ${htmlPath}`);
-      
-      // Leer contenido HTML original
+      // Leer contenido HTML
       const htmlContent = await htmlFile.text();
-      console.log('[SCORM Loader] Original HTML length:', htmlContent.length);
+      console.log('[SCORM Loader] HTML content length:', htmlContent.length);
       
-      // Reescribir HTML con rutas corregidas a los blobs
-      const context = {
-        getFileUrl: (path: string) => {
-          const url = fileServer.getFileUrl(path);
-          console.log(`[SCORM Loader] Resolving ${path} -> ${url || 'NOT FOUND'}`);
-          return url;
-        },
-        basePath: htmlPath.substring(0, htmlPath.lastIndexOf('/')) || ''
-      };
+      // Reemplazar URLs en el HTML de forma simple
+      let modifiedHtml = htmlContent;
       
-      console.log('[SCORM Loader] Rewriting HTML content...');
-      const rewrittenHtml = rewriteHtmlContent(htmlContent, context);
-      console.log('[SCORM Loader] Rewritten HTML length:', rewrittenHtml.length);
+      // Reemplazar rutas relativas de assets con URLs blob
+      fileUrls.forEach((blobUrl, filePath) => {
+        // Buscar diferentes patrones de referencia al archivo
+        const fileName = filePath.split('/').pop();
+        const patterns = [
+          new RegExp(`"${filePath}"`, 'g'),
+          new RegExp(`'${filePath}'`, 'g'),
+          new RegExp(`"\\.\/${filePath}"`, 'g'),
+          new RegExp(`'\\./${filePath}'`, 'g')
+        ];
+        
+        patterns.forEach(pattern => {
+          if (modifiedHtml.match(pattern)) {
+            modifiedHtml = modifiedHtml.replace(pattern, `"${blobUrl}"`);
+            console.log(`[SCORM Loader] Replaced ${filePath} with blob URL`);
+          }
+        });
+      });
       
-      // Crear blob con HTML reescrito
-      const htmlBlob = new Blob([rewrittenHtml], { type: 'text/html' });
+      // Inyectar API SCORM
+      const scormApi = `
+        <script>
+          window.API = {
+            LMSInitialize: () => 'true',
+            LMSFinish: () => 'true',
+            LMSGetValue: (element) => '',
+            LMSSetValue: () => 'true',
+            LMSCommit: () => 'true',
+            LMSGetLastError: () => '0',
+            LMSGetErrorString: () => 'No error',
+            LMSGetDiagnostic: () => 'No error'
+          };
+          window.API_1484_11 = window.API;
+        </script>
+      `;
+      
+      if (modifiedHtml.includes('</head>')) {
+        modifiedHtml = modifiedHtml.replace('</head>', scormApi + '</head>');
+      } else {
+        modifiedHtml = scormApi + modifiedHtml;
+      }
+      
+      // Crear blob del HTML modificado
+      const htmlBlob = new Blob([modifiedHtml], { type: 'text/html' });
       const htmlUrl = URL.createObjectURL(htmlBlob);
       
-      console.log('[SCORM Loader] ✓ Content URL created:', htmlUrl);
+      console.log('[SCORM Loader] ✓ Final HTML blob created:', htmlUrl);
       setContentUrl(htmlUrl);
 
     } catch (err) {
-      console.error('[SCORM Loader] Error:', err);
+      console.error('[SCORM Loader] ERROR:', err);
       const errorMessage = err instanceof Error ? err.message : 'Error al cargar contenido';
       setError(errorMessage);
     } finally {
