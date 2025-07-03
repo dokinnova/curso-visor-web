@@ -62,40 +62,67 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       const htmlContent = await htmlFile.text();
       console.log('[SCORM Loader] HTML content length:', htmlContent.length);
       
-      // Reemplazar URLs en el HTML de forma simple
+      // Reemplazar URLs en el HTML de forma más robusta
       let modifiedHtml = htmlContent;
       
-      // Reemplazar rutas relativas de assets con URLs blob
+      console.log('[SCORM Loader] Original HTML preview:');
+      console.log(htmlContent.substring(0, 500));
+      
+      // Crear un mapa de nombres de archivo a URLs blob para búsqueda rápida
+      const fileNameMap = new Map<string, string>();
       fileUrls.forEach((blobUrl, filePath) => {
-        // Buscar diferentes patrones de referencia al archivo
         const fileName = filePath.split('/').pop();
-        const patterns = [
-          new RegExp(`"${filePath}"`, 'g'),
-          new RegExp(`'${filePath}'`, 'g'),
-          new RegExp(`"\\.\/${filePath}"`, 'g'),
-          new RegExp(`'\\./${filePath}'`, 'g')
-        ];
-        
-        patterns.forEach(pattern => {
-          if (modifiedHtml.match(pattern)) {
-            modifiedHtml = modifiedHtml.replace(pattern, `"${blobUrl}"`);
-            console.log(`[SCORM Loader] Replaced ${filePath} with blob URL`);
-          }
-        });
+        if (fileName) {
+          fileNameMap.set(fileName, blobUrl);
+        }
+        fileNameMap.set(filePath, blobUrl);
       });
       
-      // Inyectar API SCORM
+      // Reemplazar todas las referencias usando un regex más amplio
+      const urlPattern = /((?:src|href|url)\s*[=:]\s*["']?)([^"'>\s)]+\.(js|css|html|svg|png|jpg|jpeg|gif|json))(["']?)/gi;
+      
+      modifiedHtml = modifiedHtml.replace(urlPattern, (match, prefix, url, extension, suffix) => {
+        console.log(`[SCORM Loader] Processing URL: ${url}`);
+        
+        // Limpiar la URL (quitar ./ o /)
+        let cleanUrl = url.replace(/^\.\//, '').replace(/^\//, '');
+        
+        // Buscar por ruta completa primero
+        if (fileUrls.has(cleanUrl)) {
+          const blobUrl = fileUrls.get(cleanUrl);
+          console.log(`[SCORM Loader] Direct match: ${url} -> ${blobUrl}`);
+          return prefix + blobUrl + suffix;
+        }
+        
+        // Buscar por nombre de archivo
+        const fileName = cleanUrl.split('/').pop();
+        if (fileName && fileNameMap.has(fileName)) {
+          const blobUrl = fileNameMap.get(fileName);
+          console.log(`[SCORM Loader] Filename match: ${url} -> ${blobUrl}`);
+          return prefix + blobUrl + suffix;
+        }
+        
+        console.log(`[SCORM Loader] No match found for: ${url}`);
+        return match;
+      });
+      
+      
+      console.log('[SCORM Loader] Modified HTML preview:');
+      console.log(modifiedHtml.substring(0, 500));
+      
+      // Inyectar API SCORM mejorada
       const scormApi = `
         <script>
+          console.log('SCORM API injected successfully');
           window.API = {
-            LMSInitialize: () => 'true',
-            LMSFinish: () => 'true',
-            LMSGetValue: (element) => '',
-            LMSSetValue: () => 'true',
-            LMSCommit: () => 'true',
+            LMSInitialize: (param) => { console.log('LMSInitialize:', param); return 'true'; },
+            LMSFinish: (param) => { console.log('LMSFinish:', param); return 'true'; },
+            LMSGetValue: (element) => { console.log('LMSGetValue:', element); return ''; },
+            LMSSetValue: (element, value) => { console.log('LMSSetValue:', element, value); return 'true'; },
+            LMSCommit: (param) => { console.log('LMSCommit:', param); return 'true'; },
             LMSGetLastError: () => '0',
-            LMSGetErrorString: () => 'No error',
-            LMSGetDiagnostic: () => 'No error'
+            LMSGetErrorString: (code) => 'No error',
+            LMSGetDiagnostic: (code) => 'No error'
           };
           window.API_1484_11 = window.API;
         </script>
@@ -103,6 +130,8 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       
       if (modifiedHtml.includes('</head>')) {
         modifiedHtml = modifiedHtml.replace('</head>', scormApi + '</head>');
+      } else if (modifiedHtml.includes('<head>')) {
+        modifiedHtml = modifiedHtml.replace('<head>', '<head>' + scormApi);
       } else {
         modifiedHtml = scormApi + modifiedHtml;
       }
