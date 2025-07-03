@@ -25,7 +25,7 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
   }, [resource, scormPackage]);
 
   const loadContent = async () => {
-    console.log('[SCORM Loader] Initializing file server approach');
+    console.log('[SCORM Loader] Creating comprehensive file server');
     setIsLoading(true);
     setError('');
     setContentUrl('');
@@ -40,10 +40,11 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       const fileServer = new SimpleFileServer();
       fileServerRef.current = fileServer;
       
-      // Agregar todos los archivos al servidor
-      console.log('[SCORM Loader] Adding all files to server...');
+      // Agregar TODOS los archivos al servidor con URLs blob
+      console.log('[SCORM Loader] Creating blob URLs for all files...');
       for (const [path, file] of scormPackage.files.entries()) {
         fileServer.addFile(path, file);
+        console.log(`[SCORM Loader] Added: ${path}`);
       }
       
       // Buscar el archivo HTML principal
@@ -57,19 +58,13 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
       }
 
       if (!htmlFile) {
-        // Buscar archivo principal
-        console.log('[SCORM Loader] Searching for main HTML file...');
-        const mainUrl = fileServer.findMainFile();
-        if (mainUrl) {
-          // Encontrar el archivo correspondiente a esta URL
-          for (const [path, file] of scormPackage.files.entries()) {
-            if (path.toLowerCase().includes('index.html') || 
-                path.toLowerCase().includes('main.html') ||
-                path.toLowerCase().endsWith('.html')) {
-              htmlFile = file;
-              htmlPath = path;
-              break;
-            }
+        console.log('[SCORM Loader] No resource href, searching for main HTML...');
+        for (const [path, file] of scormPackage.files.entries()) {
+          if (path.toLowerCase().includes('index.html') || path.toLowerCase().endsWith('.html')) {
+            htmlFile = file;
+            htmlPath = path;
+            console.log(`[SCORM Loader] Found HTML: ${htmlPath}`);
+            break;
           }
         }
       }
@@ -80,22 +75,29 @@ export const useSCORMContentLoader = (resource: Resource, scormPackage: SCORMPac
 
       console.log(`[SCORM Loader] Processing HTML file: ${htmlPath}`);
       
-      // Leer contenido HTML
+      // Leer contenido HTML original
       const htmlContent = await htmlFile.text();
+      console.log('[SCORM Loader] Original HTML length:', htmlContent.length);
       
-      // Reescribir HTML con rutas corregidas
+      // Reescribir HTML con rutas corregidas a los blobs
       const context = {
-        getFileUrl: (path: string) => fileServer.getFileUrl(path),
+        getFileUrl: (path: string) => {
+          const url = fileServer.getFileUrl(path);
+          console.log(`[SCORM Loader] Resolving ${path} -> ${url || 'NOT FOUND'}`);
+          return url;
+        },
         basePath: htmlPath.substring(0, htmlPath.lastIndexOf('/')) || ''
       };
       
+      console.log('[SCORM Loader] Rewriting HTML content...');
       const rewrittenHtml = rewriteHtmlContent(htmlContent, context);
+      console.log('[SCORM Loader] Rewritten HTML length:', rewrittenHtml.length);
       
       // Crear blob con HTML reescrito
       const htmlBlob = new Blob([rewrittenHtml], { type: 'text/html' });
       const htmlUrl = URL.createObjectURL(htmlBlob);
       
-      console.log('[SCORM Loader] ✓ Content processed successfully');
+      console.log('[SCORM Loader] ✓ Content URL created:', htmlUrl);
       setContentUrl(htmlUrl);
 
     } catch (err) {
