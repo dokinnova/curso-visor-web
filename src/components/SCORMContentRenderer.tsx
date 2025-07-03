@@ -37,7 +37,6 @@ const SCORMContentRenderer: React.FC<SCORMContentRendererProps> = ({
         src={contentUrl}
         className="w-full h-full border-0"
         title={title}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads allow-top-navigation-by-user-activation"
         allow="fullscreen"
         style={{
           width: '100%',
